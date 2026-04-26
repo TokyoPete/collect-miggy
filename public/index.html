@@ -724,6 +724,7 @@ function App() {
   // Cache timestamps
   const [itemsTs,            setItemsTs]            = useState(null);
   const [listingsTs,         setListingsTs]         = useState(null);
+  const [itemsPhase,         setItemsPhase]         = useState(null);  // phase message during items refresh
   const [refreshingItems,    setRefreshingItems]    = useState(false);
   const [refreshingListings, setRefreshingListings] = useState(false);
   const [refreshMsg,         setRefreshMsg]         = useState(null);
@@ -752,26 +753,55 @@ function App() {
   const handleImport = useCallback(newCollected => { saveCollected(newCollected); }, [saveCollected]);
 
   // ── Merge items data + listings prices into allCards ──────────────────────
+  // itemsData shape (from Item API per UUID):
+  //   { [seriesId]: { cards: [{ uuid, name, position, team, rarity, locations[], isSellable }], totalInCollection, totalInDatabase } }
+  // listingsData shape (from Listings API):
+  //   { [seriesId]: { [uuid]: { sellPrice, buyPrice } } }
+  //
+  // Prices from listingsData are matched to cards by UUID.
+  // Cards in items but not in listings have $0 prices (program rewards).
+  // Cards in listings but not in items are added as market-only entries.
   const mergeAndSet = useCallback((itemsData, listingsData) => {
     const result = {};
     for (const series of SERIES_LIST) {
-      const items  = itemsData?.[series.id]    || [];
-      const prices = listingsData?.[series.id] || {};
-      const cards = items.map(item => ({
-        ...item,
-        sellPrice: prices[item.uuid]?.sellPrice || 0,
-        buyPrice:  prices[item.uuid]?.buyPrice  || 0,
-        seriesId:  series.id,
-      }));
-      // Edge case: listings-only cards not in items
-      const itemUuids = new Set(items.map(i => i.uuid));
+      const seriesItems = itemsData?.[series.id];
+      const cards       = seriesItems?.cards || [];
+      const prices      = listingsData?.[series.id] || {};
+
+      // Build UUID set for dedup check
+      const seenUUIDs = new Set();
+
+      const merged = cards.map(card => {
+        seenUUIDs.add(card.uuid);
+        const p = prices[card.uuid] || {};
+        return {
+          ...card,
+          sellPrice: p.sellPrice || 0,
+          buyPrice:  p.buyPrice  || 0,
+          seriesId:  series.id,
+        };
+      });
+
+      // Add any listings-only cards (appear in market but not in Item API results)
+      // These get no location data but are still valid collection cards
       for (const [uuid, p] of Object.entries(prices)) {
-        if (!itemUuids.has(uuid)) {
-          cards.push({ uuid, name:uuid, position:"", team:"", rarity:"",
-            sellPrice:p.sellPrice, buyPrice:p.buyPrice, isSellable:true, seriesId:series.id });
+        if (!seenUUIDs.has(uuid)) {
+          merged.push({
+            uuid,
+            name:      uuid, // name unknown without Item API — will show as UUID until next items refresh
+            position:  "",
+            team:      "",
+            rarity:    "",
+            locations: ["Community Market"],
+            isSellable: true,
+            sellPrice: p.sellPrice || 0,
+            buyPrice:  p.buyPrice  || 0,
+            seriesId:  series.id,
+          });
         }
       }
-      result[series.id] = cards;
+
+      result[series.id] = merged;
     }
     setAllCards(result);
     return result;
@@ -899,6 +929,11 @@ function App() {
           ? cache.itemsRefreshing
           : cache.listingsRefreshing;
 
+        // Update phase message while items refresh is in progress
+        if (type === "items" && cache.itemsPhase) {
+          setItemsPhase(cache.itemsPhase);
+        }
+
         const newTs = type === "items"
           ? cache.items?.updatedAt
           : cache.listings?.updatedAt;
@@ -908,8 +943,9 @@ function App() {
           clearInterval(pollIntervalRef.current[type]);
           if (type === "items") {
             setRefreshingItems(false);
+            setItemsPhase(null);
             setItemsTs(newTs);
-            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCards||0} cards`, type:"ok" });
+            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCards||0} cards across ${cache.items?.totalUUIDs||0} total scanned`, type:"ok" });
           } else {
             setRefreshingListings(false);
             setListingsTs(newTs);
@@ -940,6 +976,7 @@ function App() {
         const cache = await res.json();
         if (cache.itemsRefreshing) {
           setRefreshingItems(true);
+          if (cache.itemsPhase) setItemsPhase(cache.itemsPhase);
           startPolling("items", cache.items?.updatedAt);
         }
         if (cache.listingsRefreshing) {
@@ -1030,12 +1067,37 @@ function App() {
     const cards=allCards[series.id]||[];
     const cc=cards.filter(c=>collected[c.uuid]).length;
     const needed=Math.max(0,series.required-cc);
-    const notC=cards.filter(c=>!collected[c.uuid]).sort((a,b)=>(a.sellPrice||999999999)-(b.sellPrice||999999999));
-    let low=0; notC.slice(0,needed).forEach(c=>{low+=c.sellPrice||0;});
-    const expN=[...notC].sort((a,b)=>(b.buyPrice||0)-(a.buyPrice||0)).slice(0,needed);
-    let high=0; expN.forEach(c=>{high+=c.buyPrice||0;});
-    return{...series,cards,collectedCount:cc,needed,lowCost:low,highCost:high,
-           complete:cc>=series.required,totalCards:cards.length};
+
+    // Only uncollected market-priced cards factor into stub cost
+    const marketCards    = cards.filter(c=>c.sellPrice>0||c.buyPrice>0);
+    const nonMarketCards = cards.filter(c=>!c.sellPrice&&!c.buyPrice);
+
+    const notCollectedMarket = marketCards
+      .filter(c=>!collected[c.uuid])
+      .sort((a,b)=>(a.sellPrice||999999999)-(b.sellPrice||999999999));
+
+    let low=0;
+    notCollectedMarket.slice(0,needed).forEach(c=>{low+=c.sellPrice||0;});
+    const expN=[...notCollectedMarket].sort((a,b)=>(b.buyPrice||0)-(a.buyPrice||0)).slice(0,needed);
+    let high=0;
+    expN.forEach(c=>{high+=c.buyPrice||0;});
+
+    // Count mismatch: flag when total cards in database differs from required count
+    const countMismatch = cards.length > 0 && cards.length !== series.required;
+
+    return{
+      ...series,
+      cards,
+      collectedCount: cc,
+      needed,
+      lowCost:  low,
+      highCost: high,
+      complete: cc>=series.required,
+      totalCards:      cards.length,
+      marketCardCount: marketCards.length,
+      nonMarketCount:  nonMarketCards.length,
+      countMismatch,
+    };
   }),[allCards,collected]);
 
   const cabreraTotal=useMemo(()=>{
@@ -1114,12 +1176,12 @@ function App() {
       <div className="refresh-panel">
         {/* Items refresh */}
         <div className="refresh-block">
-          <div className="refresh-block-label">Card Database (Items API)</div>
+          <div className="refresh-block-label">Card Database (Items + Item API)</div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             {refreshingItems && <span className="sdot dot-spin" style={{flexShrink:0}}/>}
             <div className={`refresh-ts ${refreshingItems?"ok":tsClass(itemsTs)}`}>
               {refreshingItems
-                ? "Updating in background…"
+                ? (itemsPhase || "Updating in background…")
                 : itemsTs ? `Updated: ${fmtTs(itemsTs)}` : "No data yet"}
             </div>
           </div>
@@ -1128,13 +1190,13 @@ function App() {
               className="refresh-btn"
               onClick={handleRefreshItems}
               disabled={refreshingItems}
-              title={refreshingItems?"Refresh already in progress":"Fetch latest card list from TheShow.com"}
+              title={refreshingItems?"Refresh already in progress":"Fetch full card database from TheShow.com (may take several minutes)"}
             >
               {refreshingItems
                 ? <><span className="spin-sm"/> In progress…</>
                 : "🔄 Refresh Cards"}
             </button>
-            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes daily at 2 PM Pacific</div>
+            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes weekly on Sundays at 2 AM Pacific</div>
           </div>
         </div>
 
@@ -1231,16 +1293,40 @@ function App() {
           </div>
           {cabreraTotal.count>21&&<div className="alert alert-warn">⚠️ {cabreraTotal.count} checked — only 21 needed. Totals show cheapest 21. Uncheck one to exclude it manually.</div>}
           {cabreraTotal.count<21&&<div className="alert alert-err">⚠️ Only {cabreraTotal.count} checked — need at least 21.</div>}
+          <div style={{fontSize:10,color:"var(--dim)",marginTop:8,lineHeight:1.7,padding:"0 2px"}}>
+            <strong style={{color:"var(--dim)"}}>Mkt</strong> = cards currently listed on the Community Market for this series &nbsp;·&nbsp;
+            <strong style={{color:"var(--dim)"}}>⚠</strong> = market count differs from required count (some cards may be program-only or not yet listed) &nbsp;·&nbsp;
+            Stub costs only include <strong style={{color:"var(--dim)"}}>market-priced cards</strong> — program reward cards are excluded from cost estimates
+          </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>✓</th><th className="left">Collection</th><th>Need</th><th>Total</th><th>Have</th><th>Left</th><th>Low (stubs)</th><th>High (stubs)</th><th>%</th><th></th></tr></thead>
+              <thead><tr>
+                <th>✓</th>
+                <th className="left">Collection</th>
+                <th title="Cards required to complete this collection">Need</th>
+                <th title="Market cards currently listed for this series">Mkt</th>
+                <th title="Warning if listed card count differs from required count">⚠</th>
+                <th>Have</th>
+                <th>Left</th>
+                <th>Low (stubs)</th>
+                <th>High (stubs)</th>
+                <th>%</th>
+                <th></th>
+              </tr></thead>
               <tbody>
                 {seriesStats.map(s=>(
                   <tr key={s.id} className={includedSeries[s.id]?"":"xrow"}>
                     <td className="center"><input type="checkbox" checked={!!includedSeries[s.id]} onChange={()=>setIncludedSeries(p=>({...p,[s.id]:!p[s.id]}))} style={{accentColor:"#e8b84b"}}/></td>
                     <td className="left" style={{fontWeight:"bold",color:s.complete?"var(--green)":"var(--text)"}}>{s.name}</td>
                     <td className="center" style={{color:"var(--dim)"}}>{s.required}</td>
-                    <td className="center" style={{color:"var(--dim)"}}>{s.totalCards}</td>
+                    <td className="center" style={{color:"var(--dim)"}}>{s.totalCards>0?s.totalCards:"—"}</td>
+                    <td className="center">
+                      {s.totalCards>0 && s.countMismatch
+                        ? <span title={`${s.totalCards} cards in market vs ${s.required} required — some cards may not be listed yet`} style={{color:"var(--accent)",cursor:"help"}}>⚠</span>
+                        : s.totalCards>0
+                          ? <span style={{color:"var(--green)"}}>✓</span>
+                          : <span style={{color:"var(--dim)"}}>—</span>}
+                    </td>
                     <td className="center" style={{color:"var(--green)"}}>{s.collectedCount}</td>
                     <td className="center" style={{color:s.needed===0?"var(--green)":"var(--accent)"}}>{s.needed}</td>
                     <td className="right" style={{color:"var(--blue)"}}>{s.lowCost>0?s.lowCost.toLocaleString():"—"}</td>
@@ -1255,6 +1341,7 @@ function App() {
                   <td colSpan={2} className="left" style={{color:"var(--accent)"}}>🏆 MIGUEL CABRERA (21/22)</td>
                   <td className="center">21</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
+                  <td></td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td className="right" style={{color:"var(--green)"}}>{cabreraTotal.low.toLocaleString()}</td>
@@ -1296,12 +1383,12 @@ function App() {
                         <td className="center"><span className="rbadge" style={{background:rarityBg(card.rarity)}}>{card.rarity?card.rarity.charAt(0).toUpperCase():"?"}</span></td>
                         <td className="center" style={{color:"var(--dim)",fontSize:11}}>{card.position}</td>
                         <td className="center" style={{color:"var(--dim)",fontSize:10}}>{card.team}</td>
-                        <td className="left" style={{color:"var(--dim)",fontSize:11,whiteSpace:"normal",maxWidth:130,lineHeight:1.3}}>
-                          {card.isSellable&&(card.sellPrice>0||card.buyPrice>0)
-                            ?"Community Market"
-                            :card.isSellable
-                              ?(SOURCE_HINTS[activeSeries]?`${SOURCE_HINTS[activeSeries]} / Market`:"Community Market")
-                              :(SOURCE_HINTS[activeSeries]||"Program Reward")}
+                        <td className="left" style={{color:"var(--dim)",fontSize:11,whiteSpace:"normal",maxWidth:160,lineHeight:1.4}}>
+                          {card.locations && card.locations.length > 0
+                            ? card.locations.join(" · ")
+                            : card.isSellable
+                              ? "Community Market"
+                              : (SOURCE_HINTS[activeSeries] || "Program Reward")}
                         </td>
                         <td className="right" style={{color:card.buyPrice>0?"var(--accent)":"var(--dim)"}}>{card.buyPrice>0?card.buyPrice.toLocaleString():"—"}</td>
                         <td className="right" style={{color:card.sellPrice>0?"var(--blue)":"var(--dim)"}}>{card.sellPrice>0?card.sellPrice.toLocaleString():"—"}</td>
