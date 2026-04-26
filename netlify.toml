@@ -6,10 +6,11 @@
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/blobs"]
 
-# Items API: daily at 2 PM Pacific (22:00 UTC covers PDT Apr-Nov; change to 21:00 for PST Nov-Mar)
+# Items DB: weekly, Sunday 2 AM Pacific (10:00 UTC covers PDT Apr-Nov)
+# Change to "0 9 * * 0" for PST Nov-Mar
 [functions."refresh-items-background"]
-  schedule = "0 22 * * *"
+  schedule = "0 10 * * 0"
 
-# Listings API: every hour on the hour (UTC)
+# Market prices: every hour on the hour
 [functions."refresh-listings-background"]
   schedule = "0 * * * *"
