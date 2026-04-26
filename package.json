@@ -1,0 +1,10 @@
+{
+  "name": "collect-miggy",
+  "version": "1.0.0",
+  "description": "MLB The Show 26 — Miguel Cabrera Collection Tracker",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "@netlify/functions": "^2.8.0"
+  }
+}

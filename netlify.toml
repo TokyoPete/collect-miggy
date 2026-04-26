@@ -1,0 +1,15 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs"]
+
+# Items API: daily at 2 PM Pacific (22:00 UTC covers PDT Apr-Nov; change to 21:00 for PST Nov-Mar)
+[functions."refresh-items-background"]
+  schedule = "0 22 * * *"
+
+# Listings API: every hour on the hour (UTC)
+[functions."refresh-listings-background"]
+  schedule = "0 * * * *"
