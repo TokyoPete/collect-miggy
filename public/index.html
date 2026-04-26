@@ -1,1 +1,1347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0e1a" />
+  <title>⚾ Cabrera Collection Tracker — MLB The Show 26</title>
 
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0a0e1a; --surface:#111827; --surface2:#1a2235; --border:#1e2d45;
+      --accent:#e8b84b; --accent-d:#c49a30; --text:#e8eaf0; --dim:#8a95a8;
+      --green:#34d399; --red:#f87171; --blue:#60a5fa; --orange:#fb923c;
+    }
+    html,body { background:var(--bg); color:var(--text); font-family:'Georgia',serif; min-height:100vh; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+    ::-webkit-scrollbar{width:6px;height:6px} ::-webkit-scrollbar-track{background:var(--surface)} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+    /* ── Modals ── */
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow-y:auto; }
+    .modal-box { background:#0c1520;border:2px solid var(--accent);border-radius:14px;width:100%;max-width:600px;padding:18px;font-family:'Georgia',serif;margin:auto; }
+    .modal-box h2 { color:var(--accent);font-size:18px;margin-bottom:3px; }
+    .modal-sub { color:var(--dim);font-size:12px;margin-bottom:14px;line-height:1.5; }
+
+    /* confirm modal */
+    .confirm-box { background:#0c1520;border:2px solid var(--red);border-radius:14px;width:100%;max-width:420px;padding:20px;font-family:'Georgia',serif;margin:auto; }
+    .confirm-box h2 { color:var(--red);font-size:16px;margin-bottom:8px; }
+    .confirm-box p  { color:var(--dim);font-size:13px;line-height:1.6;margin-bottom:16px; }
+    .confirm-box .confirm-stats { background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:16px; }
+    .confirm-box .confirm-stats div { margin-bottom:4px; }
+
+    .fix-step { background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px; }
+    .fix-step-header { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
+    .step-num { width:28px;height:28px;border-radius:50%;background:var(--accent);color:#000;font-weight:bold;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+    .step-title { font-size:14px;font-weight:bold;color:var(--text); }
+    .step-sub { font-size:11px;color:var(--green);margin-top:1px; }
+    .step-body { font-size:12px;color:var(--dim);line-height:1.7; }
+    .step-body strong { color:var(--text); }
+    .step-body code { background:#111;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:11px;color:var(--blue);display:inline-block;margin:2px 0; }
+
+    .diag-section { margin-top:14px; }
+    .diag-section h3 { font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px; }
+    .diag-row { display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;font-size:12px; }
+    .dbadge { flex-shrink:0;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:bold; }
+    .dbadge-ok   { background:#052e16;color:#34d399;border:1px solid #065f46; }
+    .dbadge-fail { background:#450a0a;color:#f87171;border:1px solid #7f1d1d; }
+    .dbadge-warn { background:#422006;color:#fbbf24;border:1px solid #78350f; }
+    .diag-msg { color:var(--text);line-height:1.6;word-break:break-word; }
+    .diag-code { background:#060d18;border:1px solid var(--border);border-radius:6px;padding:10px;font-family:monospace;font-size:10px;color:#60a5fa;white-space:pre-wrap;word-break:break-all;max-height:160px;overflow-y:auto;margin-top:6px;line-height:1.5; }
+
+    .btn-row { display:flex;gap:8px;flex-wrap:wrap;margin-top:16px; }
+    .btn { padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:bold;transition:opacity .15s; }
+    .btn:disabled { opacity:.45;cursor:not-allowed; }
+    .btn-primary   { background:var(--accent);color:#000; }
+    .btn-secondary { background:var(--surface2);color:var(--text);border:1px solid var(--border); }
+    .btn-green     { background:#065f46;color:#34d399;border:1px solid #34d399; }
+    .btn-danger    { background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b; }
+    .diag-spinner  { display:inline-block;width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:4px; }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ── App chrome ── */
+    .app-header { background:linear-gradient(135deg,#0a0e1a 0%,#0d1a2e 50%,#0a1628 100%);border-bottom:2px solid var(--accent);padding:14px 16px; }
+    .eyebrow { font-size:9px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:4px; }
+    .app-header h1 { font-size:19px;font-weight:bold;line-height:1.2; }
+    .app-header .sub { font-size:11px;color:var(--dim);margin-top:2px; }
+    .header-stats { display:flex;gap:14px;margin-top:10px;flex-wrap:wrap; }
+    .stat-box .stat-label { font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase; }
+    .stat-box .stat-value { font-size:18px;font-weight:bold; }
+
+    .tabs { display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch; }
+    .tab-btn { flex-shrink:0;padding:11px 14px;background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap; }
+    .tab-btn.active { border-bottom-color:var(--accent);color:var(--accent); }
+    .tab-right { margin-left:auto;display:flex; }
+    .tab-icon-btn { padding:10px 12px;background:none;border:none;color:var(--dim);font-size:12px;font-family:inherit;cursor:pointer;flex-shrink:0; }
+
+    .page { padding:14px; }
+    .cabrera-banner { background:linear-gradient(135deg,var(--surface2),#1a1000);border:1px solid var(--accent);border-radius:12px;padding:14px;margin-bottom:14px; }
+    .cabrera-banner h2 { font-size:16px;font-weight:bold;margin-top:3px; }
+    .cabrera-banner .note { font-size:11px;color:var(--dim);margin-top:2px; }
+    .cabrera-costs { display:flex;gap:18px;margin-top:10px;flex-wrap:wrap; }
+    .cost-label { font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase; }
+    .cost-value { font-size:19px;font-weight:bold; }
+    .cost-unit  { font-size:10px;color:var(--dim); }
+    .alert { border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:10px; }
+    .alert-warn { background:#1a1500;border:1px solid var(--accent-d);color:var(--accent); }
+    .alert-err  { background:#1a0a0a;border:1px solid var(--red);color:var(--red); }
+    .alert-ok   { background:#052e16;border:1px solid #065f46;color:var(--green); }
+
+    .table-wrap { background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;overflow-x:auto;-webkit-overflow-scrolling:touch; }
+    table { width:100%;border-collapse:collapse;font-size:12px; }
+    thead { background:var(--surface2); }
+    th { padding:8px 9px;text-align:center;color:var(--dim);font-size:10px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;white-space:nowrap; }
+    th.left,td.left { text-align:left; }
+    td { padding:7px 9px;vertical-align:middle;border-bottom:1px solid var(--border);white-space:nowrap; }
+    td.center{text-align:center} td.right{text-align:right}
+    tfoot td { border-top:2px solid var(--accent);border-bottom:none;background:var(--surface2);font-weight:bold; }
+    tr:last-child td { border-bottom:none; }
+    tr.crow { background:rgba(52,211,153,.05); }
+    tr.xrow { opacity:.4;background:rgba(0,0,0,.3); }
+    .rbadge { display:inline-block;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:bold;color:#000; }
+
+    .pill-row { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px; }
+    .pill { padding:5px 12px;border-radius:18px;border:1px solid var(--border);background:var(--surface2);color:var(--dim);font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap; }
+    .pill.active { background:var(--accent);border-color:var(--accent);color:#000;font-weight:bold; }
+
+    .search-input { padding:8px 12px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;-webkit-appearance:none;margin-bottom:10px; }
+    .search-input:focus { outline:none;border-color:var(--accent-d); }
+    .cost-chips { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px; }
+    .chip { background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:12px; }
+    .empty { text-align:center;padding:40px 16px;color:var(--dim);font-size:14px; }
+    .prog-pill { font-size:10px;font-weight:bold;color:var(--accent); }
+    .prog-done { color:var(--green); }
+    .view-btn { padding:3px 9px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);font-size:11px;font-family:inherit;border-radius:4px;cursor:pointer; }
+
+    /* ── CSV Tab ── */
+    .csv-section { background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px; }
+    .csv-section h3 { font-size:13px;font-weight:bold;color:var(--text);margin-bottom:6px; }
+    .csv-section p  { font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px; }
+    .csv-meta { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px; }
+    .csv-meta-chip { background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px; }
+    .csv-meta-chip .cm-label { color:var(--dim); }
+    .csv-meta-chip .cm-val   { color:var(--text);font-weight:bold; }
+    .csv-preview { background:#060d18;border:1px solid var(--border);border-radius:6px;padding:10px;font-family:monospace;font-size:11px;color:#60a5fa;white-space:pre;overflow-x:auto;margin-bottom:12px;line-height:1.5; }
+    .drop-zone { border:2px dashed var(--border);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s; }
+    .drop-zone:hover,.drop-zone.drag-over { border-color:var(--accent);background:rgba(232,184,75,.06); }
+    .drop-zone .dz-icon  { font-size:32px;margin-bottom:8px; }
+    .drop-zone .dz-title { font-size:14px;font-weight:bold;color:var(--text);margin-bottom:4px; }
+    .drop-zone .dz-sub   { font-size:12px;color:var(--dim); }
+    .hidden-file { display:none; }
+
+    .import-result { border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;line-height:1.7; }
+    .import-result.ok   { background:#052e16;border:1px solid #065f46;color:var(--green); }
+    .import-result.warn { background:#1a1500;border:1px solid var(--accent-d);color:var(--accent); }
+    .import-result.err  { background:#1a0a0a;border:1px solid var(--red);color:var(--red); }
+    .import-result.info { background:#0c1a3a;border:1px solid #1e3a8a;color:var(--blue); }
+
+    /* ── Data Refresh Panel ── */
+    .refresh-panel { background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center; }
+    .refresh-block { display:flex;flex-direction:column;gap:3px;flex:1;min-width:160px; }
+    .refresh-block-label { font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim); }
+    .refresh-ts { font-size:10px;color:var(--dim);margin-top:1px; }
+    .refresh-ts.ok  { color:var(--green); }
+    .refresh-ts.old { color:var(--accent); }
+    .refresh-ts.none{ color:var(--red); }
+    .refresh-btn { display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:border-color .15s; }
+    .refresh-btn:hover:not(:disabled) { border-color:var(--accent);color:var(--accent); }
+    .refresh-btn:disabled { opacity:.45;cursor:not-allowed; }
+    .refresh-divider { width:1px;background:var(--border);align-self:stretch;flex-shrink:0; }
+
+    .status-bar { background:var(--surface2);border-top:1px solid var(--border);padding:7px 14px;font-size:11px;color:var(--dim);display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+    .sdot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
+    .dot-ok{background:var(--green)} .dot-err{background:var(--red)} .dot-warn{background:#fbbf24}
+    .dot-spin{background:var(--accent);animation:pulse 1s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .spin-sm { display:inline-block;width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite; }
+
+    .legend { border-top:1px solid var(--border);padding:10px 14px;font-size:10px;color:var(--dim);display:flex;flex-wrap:wrap;gap:10px;line-height:1.6; }
+    input[type=checkbox] { width:18px;height:18px;cursor:pointer;flex-shrink:0; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const BASE      = "https://mlb26.theshow.com";
+const LS_KEY    = "cabrera_v3";
+const CSV_FILENAME = "cabrera_collection.csv";
+const CSV_HEADERS  = ["uuid", "card_name", "collection"];
+
+// Netlify function endpoints (same-origin, no CORS needed)
+const API_GET_CACHE        = "/api/get-cache";
+const API_REFRESH_ITEMS    = "/api/refresh-items";
+const API_REFRESH_LISTINGS = "/api/refresh-listings";
+
+// Fallback proxies for direct TheShow API calls (used only if cache is empty)
+const PROXIES = [
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+];
+
+// Format an ISO timestamp as "mm/dd/yy hh:mm" in local time
+function fmtTs(isoStr) {
+  if (!isoStr) return "Never";
+  const d = new Date(isoStr);
+  if (isNaN(d)) return "Unknown";
+  const mm   = String(d.getMonth() + 1).padStart(2, "0");
+  const dd   = String(d.getDate()).padStart(2, "0");
+  const yy   = String(d.getFullYear()).slice(-2);
+  const hh   = String(d.getHours()).padStart(2, "0");
+  const min  = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}/${dd}/${yy} ${hh}:${min}`;
+}
+
+// How old is a timestamp in hours?
+function hoursAgo(isoStr) {
+  if (!isoStr) return Infinity;
+  return (Date.now() - new Date(isoStr).getTime()) / 3_600_000;
+}
+
+function parseProxyResponse(text, i) {
+  if (i === 2) { const w = JSON.parse(text); if (w.contents) return JSON.parse(w.contents); }
+  return JSON.parse(text);
+}
+
+const SERIES_LIST = [
+  { id:"10028", name:"World Baseball Classic", required:142 },
+  { id:"10004", name:"All-Star",               required:39  },
+  { id:"10046", name:"Jolt",                   required:30  },
+  { id:"10035", name:"The Negro Leagues",       required:27  },
+  { id:"10017", name:"Topps Now",              required:24  },
+  { id:"10050", name:"New Threads",            required:23  },
+  { id:"10044", name:"Contributor",            required:18  },
+  { id:"10005", name:"Awards",                 required:18  },
+  { id:"10002", name:"Breakout",               required:17  },
+  { id:"10039", name:"Spring Breakout",        required:16  },
+  { id:"10020", name:"2nd Half Heroes",        required:15  },
+  { id:"10043", name:"Egg Hunt",               required:15  },
+  { id:"10047", name:"Spotlight",              required:12  },
+  { id:"10003", name:"Veteran",                required:11  },
+  { id:"10006", name:"Postseason",             required:9   },
+  { id:"10062", name:"St. Patrick's Day",      required:8   },
+  { id:"10001", name:"Rookie",                 required:6   },
+  { id:"10068", name:"Mexico City Series",     required:4   },
+  { id:"10034", name:"Standout",               required:3   },
+  { id:"10049", name:"Cornerstone",            required:2   },
+  { id:"10022", name:"Milestone",              required:2   },
+  { id:"10045", name:"Last Ride",              required:1   },
+];
+
+const SERIES_NAME = Object.fromEntries(SERIES_LIST.map(s => [s.id, s.name]));
+
+const SOURCE_HINTS = {
+  "10046":"Jolt Program rewards",
+  "10044":"Contributor Program / Moments",
+  "10003":"Veteran Program rewards",
+  "10006":"Postseason Program rewards",
+  "10001":"Rookie Program rewards",
+  "10049":"Cornerstone Program rewards",
+  "10022":"Milestone Program rewards",
+  "10045":"Last Ride Program rewards",
+  "10002":"Breakout Program rewards",
+  "10035":"Negro Leagues Program rewards",
+  "10062":"St. Patrick's Day Pack / Community Market",
+  "10028":"WBC Program / Community Market",
+  "10004":"All-Star Pack / Community Market",
+  "10017":"Topps Now Program / Community Market",
+  "10050":"New Threads Pack / Community Market",
+  "10005":"Awards Program / Community Market",
+  "10039":"Spring Breakout Pack / Community Market",
+  "10020":"2nd Half Heroes Program / Community Market",
+  "10043":"Egg Hunt Event / Community Market",
+  "10047":"Spotlight Program / Community Market",
+  "10068":"Mexico City Series Pack / Community Market",
+  "10034":"Standout Program / Community Market",
+};
+
+function rarityBg(r) {
+  switch((r||"").toLowerCase()){
+    case"diamond":return"#b9f2ff"; case"gold":return"#ffd700";
+    case"silver":return"#c0c0c0"; case"bronze":return"#cd7f32"; default:return"#999";
+  }
+}
+function isBlockedProtocol() {
+  return ["file:","content:","blob:"].includes(window.location.protocol);
+}
+
+// ── CSV helpers ───────────────────────────────────────────────────────────────
+
+// Escape a single CSV field value
+function csvEscape(val) {
+  const s = String(val ?? "");
+  return s.includes(",") || s.includes('"') || s.includes("\n")
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Build CSV string from collected map + allCards lookup
+function buildCSV(collected, allCards) {
+  const rows = [CSV_HEADERS.join(",")];
+  // Walk every card in every series in SERIES_LIST order
+  for (const series of SERIES_LIST) {
+    const cards = allCards[series.id] || [];
+    for (const card of cards) {
+      if (collected[card.uuid]) {
+        rows.push([
+          csvEscape(card.uuid),
+          csvEscape(card.name),
+          csvEscape(series.name),
+        ].join(","));
+      }
+    }
+  }
+  return rows.join("\r\n");
+}
+
+// Trigger a file download in the browser
+function downloadCSV(csvString) {
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = CSV_FILENAME;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// Parse a CSV string → new collected map { uuid: true }
+// Only the uuid column is required; card_name and collection are ignored on import.
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  if (lines.length < 2) return { ok: false, error: "File appears empty or has no data rows.", collected: {}, count: 0 };
+
+  // Parse header to find uuid column index (case-insensitive, trimmed)
+  const header = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, "").toLowerCase());
+  const uuidIdx = header.indexOf("uuid");
+  if (uuidIdx === -1) return { ok: false, error: 'No "uuid" column found in header row. Expected: uuid,card_name,collection', collected: {}, count: 0 };
+
+  const newCollected = {};
+  let count = 0;
+  let skipped = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Simple CSV field split respecting quoted fields
+    const fields = splitCSVLine(line);
+    const uuid = (fields[uuidIdx] || "").trim().replace(/^"|"$/g, "");
+    if (uuid) {
+      newCollected[uuid] = true;
+      count++;
+    } else {
+      skipped++;
+    }
+  }
+
+  if (count === 0) return { ok: false, error: "No valid UUID values found in the file.", collected: {}, count: 0 };
+  return { ok: true, error: null, collected: newCollected, count, skipped };
+}
+
+// Minimal CSV line splitter that handles quoted fields with commas
+function splitCSVLine(line) {
+  const fields = [];
+  let cur = "", inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuote && line[i+1] === '"') { cur += '"'; i++; }
+      else { inQuote = !inQuote; }
+    } else if (c === "," && !inQuote) {
+      fields.push(cur); cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  fields.push(cur);
+  return fields;
+}
+
+// ── Fetch helpers ──────────────────────────────────────────────────────────────
+
+// Detect which response field to expect based on the URL
+function responseKey(url) {
+  if (url.includes("/items.json"))    return "items";
+  if (url.includes("/listings.json")) return "listings";
+  return null; // unknown — accept any parseable JSON
+}
+
+async function fetchWithFallback(url) {
+  const log = [];
+  const key = responseKey(url);
+
+  const validate = (d) => {
+    if (!key) return true;               // no validation needed
+    if (d[key] !== undefined) return true; // expected field present
+    // Be lenient: if the object has page info it's probably the right shape
+    if (d.page !== undefined && d.total_pages !== undefined) return true;
+    throw new Error(`Expected "${key}" field in response, got keys: ${Object.keys(d).join(", ")}`);
+  };
+
+  // 1. Direct
+  try {
+    log.push(`DIRECT → ${url.substring(0,80)}`);
+    const r = await fetch(url, { mode:"cors", cache:"no-store" });
+    log.push(`  status: ${r.status}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    validate(d);
+    log.push(`  ✓ ${key||"data"}: ${d[key]?.length ?? "ok"}`);
+    return { data:d, method:"direct", log };
+  } catch(e) { log.push(`  ✗ ${e.name}: ${e.message}`); }
+
+  // 2. Proxies — codetabs first (confirmed working), others as fallback
+  const orderedProxies = [
+    { idx:0, fn: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, wrap: false },
+    { idx:2, fn: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,       wrap: true  },
+    { idx:1, fn: u => `https://thingproxy.freeboard.io/fetch/${u}`,                        wrap: false },
+  ];
+
+  for (const proxy of orderedProxies) {
+    const proxied = proxy.fn(url);
+    try {
+      log.push(`PROXY${proxy.idx+1} → ${proxied.substring(0,80)}…`);
+      const r = await fetch(proxied, { cache:"no-store" });
+      log.push(`  status: ${r.status}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      log.push(`  preview: ${text.substring(0,80)}`);
+      let d;
+      if (proxy.wrap) {
+        const wrapper = JSON.parse(text);
+        d = JSON.parse(wrapper.contents);
+      } else {
+        d = JSON.parse(text);
+      }
+      validate(d);
+      log.push(`  ✓ ${key||"data"}: ${d[key]?.length ?? "ok"}`);
+      return { data:d, method:`proxy${proxy.idx+1}`, log };
+    } catch(e) { log.push(`  ✗ ${e.name}: ${e.message}`); }
+  }
+
+  return { data:null, method:null, log };
+}
+
+// ── Hosting / Diagnostic Modal ─────────────────────────────────────────────────
+function HostingModal({ onClose, diagLog, diagResults, diagRunning, onRetest }) {
+  const logRef = useRef();
+  useEffect(()=>{ if(logRef.current) logRef.current.scrollTop=logRef.current.scrollHeight; },[diagLog]);
+
+  const copyLog = () => {
+    const text = [
+      "=== CABRERA TRACKER DIAGNOSTIC LOG ===",
+      `Date: ${new Date().toISOString()}`,
+      `Origin: ${window.location.href}`,
+      `Protocol: ${window.location.protocol}`,
+      `UA: ${navigator.userAgent}`,
+      "=== RESULTS ===",
+      ...diagResults.map(r=>`[${r.label}] ${r.status}: ${r.message}`),
+      "=== FULL LOG ===",
+      ...diagLog,
+    ].join("\n");
+    try {
+      if (navigator.clipboard) navigator.clipboard.writeText(text);
+      else {
+        const ta=document.createElement("textarea"); ta.value=text;
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      }
+      alert("Log copied! Paste it into your Claude chat.");
+    } catch { alert("Please manually select and copy the log text above."); }
+  };
+
+  const anyOk = diagResults.some(r=>r.status==="ok" && (r.label==="DIRECT"||r.label.startsWith("PROXY")));
+
+  return (
+    <div className="modal-overlay" onClick={e=>{ if(e.target===e.currentTarget&&!diagRunning) onClose(); }}>
+      <div className="modal-box">
+        <h2>{anyOk ? "✅ API Connected" : "📡 Setup Required"}</h2>
+        <p className="modal-sub">
+          {anyOk
+            ? "Card data is reachable. Close this to proceed."
+            : `File opened via "${window.location.protocol}" — browsers block external API calls from local files. Host this file at a real web address to load card data.`}
+        </p>
+
+        {!anyOk && (
+          <div>
+            <div style={{fontSize:11,color:"var(--accent)",marginBottom:10,letterSpacing:1,textTransform:"uppercase"}}>How to fix — choose one:</div>
+            <div className="fix-step">
+              <div className="fix-step-header"><div className="step-num">1</div><div><div className="step-title">Netlify Drop</div><div className="step-sub">✓ Free · ✓ Instant · ✓ Works on mobile</div></div></div>
+              <div className="step-body">Go to <strong>netlify.com/drop</strong> in Chrome → tap "Or browse to upload" → select this HTML file → open the URL Netlify gives you.</div>
+            </div>
+            <div className="fix-step">
+              <div className="fix-step-header"><div className="step-num">2</div><div><div className="step-title">GitHub Pages</div><div className="step-sub">✓ Free · ✓ Permanent URL</div></div></div>
+              <div className="step-body">Create a repo at <strong>github.com</strong> → upload file renamed to <code>index.html</code> → Settings → Pages → enable. Your URL: <code>username.github.io/reponame</code></div>
+            </div>
+            <div className="fix-step">
+              <div className="fix-step-header"><div className="step-num">3</div><div><div className="step-title">Local PC server → phone</div><div className="step-sub">✓ No internet hosting needed</div></div></div>
+              <div className="step-body">In the file's folder run: <code>python3 -m http.server 8080</code><br/>Then open <code>http://YOUR-PC-IP:8080</code> on your phone (same WiFi).</div>
+            </div>
+          </div>
+        )}
+
+        {diagResults.length > 0 && (
+          <div className="diag-section">
+            <h3>Diagnostic Results {diagRunning && <span className="diag-spinner"/>}</h3>
+            {diagResults.map((r,i)=>(
+              <div className="diag-row" key={i}>
+                <span className={`dbadge dbadge-${r.status}`}>{r.label}</span>
+                <span className="diag-msg" style={{fontSize:12}}>{r.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {diagRunning && <div style={{color:"var(--dim)",fontSize:12,margin:"8px 0",display:"flex",alignItems:"center",gap:6}}><span className="diag-spinner"/>Running tests…</div>}
+
+        <div className="diag-section">
+          <h3>Full Log</h3>
+          <div className="diag-code" ref={logRef}>{diagLog.length===0?"Starting…":diagLog.join("\n")}</div>
+        </div>
+        <div className="btn-row">
+          {!diagRunning && <button className="btn btn-secondary" onClick={onRetest}>🔄 Retest</button>}
+          <button className="btn btn-secondary" onClick={copyLog}>📋 Copy Log</button>
+          {!diagRunning && <button className="btn btn-secondary" onClick={onClose}>Close</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Import Confirm Modal ───────────────────────────────────────────────────────
+function ImportConfirmModal({ stats, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay">
+      <div className="confirm-box">
+        <h2>⚠️ Replace Entire Collection?</h2>
+        <p>Importing will <strong>completely overwrite</strong> your current collection in local storage. This cannot be undone.</p>
+        <div className="confirm-stats">
+          <div><span style={{color:"var(--dim)"}}>Cards in CSV: </span><span style={{color:"var(--text)",fontWeight:"bold"}}>{stats.count}</span></div>
+          <div><span style={{color:"var(--dim)"}}>Currently collected: </span><span style={{color:"var(--text)",fontWeight:"bold"}}>{stats.current}</span></div>
+          {stats.skipped > 0 && <div><span style={{color:"var(--dim)"}}>Rows skipped (no UUID): </span><span style={{color:"var(--orange)",fontWeight:"bold"}}>{stats.skipped}</span></div>}
+          {stats.unmatched > 0 && <div><span style={{color:"var(--dim)"}}>UUIDs not in card data: </span><span style={{color:"var(--accent)",fontWeight:"bold"}}>{stats.unmatched}</span> <span style={{color:"var(--dim)",fontSize:11}}>(still imported)</span></div>}
+        </div>
+        <div className="btn-row">
+          <button className="btn btn-danger" onClick={onConfirm}>Replace Collection</button>
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CSV Tab Component ──────────────────────────────────────────────────────────
+function CSVTab({ allCards, collected, onImport, loadState }) {
+  const fileInputRef = useRef();
+  const [dragOver,      setDragOver]      = useState(false);
+  const [importResult,  setImportResult]  = useState(null); // {ok, message, type}
+  const [pendingImport, setPendingImport] = useState(null); // parsed result waiting for confirm
+  const [parseStats,    setParseStats]    = useState(null);
+
+  const totalCollected = Object.values(collected).filter(Boolean).length;
+  const canExport = loadState === "done" && totalCollected > 0;
+
+  // Build a quick UUID→{name,seriesId} lookup from allCards
+  const cardLookup = useMemo(() => {
+    const map = {};
+    for (const series of SERIES_LIST) {
+      for (const card of (allCards[series.id]||[])) {
+        map[card.uuid] = { name: card.name, seriesId: series.id };
+      }
+    }
+    return map;
+  }, [allCards]);
+
+  const handleExport = () => {
+    if (!canExport) return;
+    const csv = buildCSV(collected, allCards);
+    downloadCSV(csv);
+    setImportResult({ ok:true, type:"ok", message:`✓ Exported ${totalCollected} collected cards to ${CSV_FILENAME}` });
+  };
+
+  const processFile = (file) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setImportResult({ ok:false, type:"err", message:"Please select a .csv file." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const result = parseCSV(text);
+      if (!result.ok) {
+        setImportResult({ ok:false, type:"err", message:`Import error: ${result.error}` });
+        return;
+      }
+      // Count how many UUIDs aren't in current card data
+      const unmatched = Object.keys(result.collected).filter(uuid => !cardLookup[uuid]).length;
+      const stats = {
+        count: result.count,
+        current: totalCollected,
+        skipped: result.skipped,
+        unmatched,
+        parsed: result.collected,
+      };
+      setParseStats(stats);
+      setPendingImport(result.collected);
+      setImportResult(null);
+    };
+    reader.onerror = () => setImportResult({ ok:false, type:"err", message:"Failed to read file." });
+    reader.readAsText(file);
+  };
+
+  const handleFileInput = (e) => {
+    processFile(e.target.files[0]);
+    e.target.value = ""; // reset so same file can be re-selected
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    processFile(e.dataTransfer.files[0]);
+  };
+
+  const confirmImport = () => {
+    onImport(pendingImport);
+    setImportResult({ ok:true, type:"ok", message:`✓ Imported ${parseStats.count} cards. Local storage replaced.${parseStats.unmatched>0 ? ` (${parseStats.unmatched} UUIDs not matched to current card data — still saved.)` : ""}` });
+    setPendingImport(null);
+    setParseStats(null);
+  };
+
+  // Sample of what CSV looks like
+  const sampleLines = [
+    "uuid,card_name,collection",
+    "a1b2c3d4e5f6...,Mike Trout,Spotlight",
+    "f6e5d4c3b2a1...,Shohei Ohtani,All-Star",
+    "…",
+  ].join("\n");
+
+  return (
+    <div className="page">
+      {pendingImport && parseStats && (
+        <ImportConfirmModal
+          stats={parseStats}
+          onConfirm={confirmImport}
+          onCancel={()=>{ setPendingImport(null); setParseStats(null); }}
+        />
+      )}
+
+      {/* Export */}
+      <div className="csv-section">
+        <h3>📤 Export Collection</h3>
+        <p>
+          Downloads a CSV of all cards you currently have checked. The file contains three columns:
+          <strong> uuid</strong>, <strong>card_name</strong>, and <strong>collection</strong>.
+          Share this file to sync your progress to another browser or device.
+        </p>
+        <div className="csv-meta">
+          <div className="csv-meta-chip"><span className="cm-label">Cards collected: </span><span className="cm-val">{totalCollected}</span></div>
+          <div className="csv-meta-chip"><span className="cm-label">File: </span><span className="cm-val">{CSV_FILENAME}</span></div>
+          <div className="csv-meta-chip"><span className="cm-label">Format: </span><span className="cm-val">uuid, card_name, collection</span></div>
+        </div>
+        <div className="csv-preview">{sampleLines}</div>
+        <button
+          className="btn btn-primary"
+          onClick={handleExport}
+          disabled={!canExport}
+          title={!canExport ? (loadState!=="done" ? "Load card data first" : "No cards collected yet") : ""}
+        >
+          {canExport ? `⬇ Export ${totalCollected} Cards to CSV` : loadState!=="done" ? "⬇ Export (load data first)" : "⬇ Export (no cards collected yet)"}
+        </button>
+        {loadState !== "done" && (
+          <div style={{fontSize:11,color:"var(--dim)",marginTop:8}}>
+            ⚠ Card data must be loaded before exporting. Card names and collection names require the card database to be populated.
+          </div>
+        )}
+      </div>
+
+      {/* Import */}
+      <div className="csv-section">
+        <h3>📥 Import Collection</h3>
+        <p>
+          Select or drop a previously exported CSV file. <strong>UUID is the only required field</strong> —
+          card_name and collection columns are ignored during import.
+          Importing <strong>completely replaces</strong> your current collection in local storage.
+        </p>
+
+        <div
+          className={`drop-zone ${dragOver?"drag-over":""}`}
+          onDragOver={e=>{ e.preventDefault(); setDragOver(true); }}
+          onDragLeave={()=>setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={()=>fileInputRef.current?.click()}
+        >
+          <div className="dz-icon">📂</div>
+          <div className="dz-title">Tap to select file, or drag and drop</div>
+          <div className="dz-sub">.csv files only · replaces entire collection</div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden-file"
+          onChange={handleFileInput}
+        />
+
+        {importResult && (
+          <div className={`import-result ${importResult.type}`}>
+            {importResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* Notes */}
+      <div className="csv-section" style={{background:"transparent",border:"1px solid var(--border)"}}>
+        <h3 style={{color:"var(--dim)"}}>Notes</h3>
+        <p style={{marginBottom:0}}>
+          • The CSV only tracks which cards you've marked as collected (checkboxes). Collection include/exclude settings are not exported.<br/>
+          • UUIDs in the CSV that don't match any card in the current database are still saved — they'll activate if those cards are added later.<br/>
+          • To transfer to another browser: export on device A → share the .csv file → import on device B.<br/>
+          • The CSV is plain text and can be opened in Excel, Google Sheets, or any text editor.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+  const [allCards,       setAllCards]       = useState({});
+  const [loadState,      setLoadState]      = useState("idle");
+  const [loadProgress,   setLoadProgress]   = useState({current:0,total:SERIES_LIST.length*2,series:"",phase:""});
+  const [fetchErrors,    setFetchErrors]    = useState([]);
+  const [fetchMethod,    setFetchMethod]    = useState(null);
+
+  // Cache timestamps
+  const [itemsTs,            setItemsTs]            = useState(null);
+  const [listingsTs,         setListingsTs]         = useState(null);
+  const [refreshingItems,    setRefreshingItems]    = useState(false);
+  const [refreshingListings, setRefreshingListings] = useState(false);
+  const [refreshMsg,         setRefreshMsg]         = useState(null);
+
+  const [collected,      setCollected]      = useState({});
+  const [includedSeries, setIncludedSeries] = useState(()=>{ const m={}; SERIES_LIST.forEach(s=>m[s.id]=true); return m; });
+  const [activeTab,      setActiveTab]      = useState("summary");
+  const [activeSeries,   setActiveSeries]   = useState(null);
+  const [searchQuery,    setSearchQuery]    = useState("");
+
+  const [showModal,   setShowModal]   = useState(false);
+  const [diagLog,     setDiagLog]     = useState([]);
+  const [diagResults, setDiagResults] = useState([]);
+  const [diagRunning, setDiagRunning] = useState(false);
+
+  // Restore collected from localStorage
+  useEffect(()=>{
+    try{ const s=localStorage.getItem(LS_KEY); if(s) setCollected(JSON.parse(s)); }catch{}
+  },[]);
+
+  const saveCollected = useCallback(next => {
+    setCollected(next);
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(next)); }catch{}
+  }, []);
+
+  const handleImport = useCallback(newCollected => { saveCollected(newCollected); }, [saveCollected]);
+
+  // ── Merge items data + listings prices into allCards ──────────────────────
+  const mergeAndSet = useCallback((itemsData, listingsData) => {
+    const result = {};
+    for (const series of SERIES_LIST) {
+      const items  = itemsData?.[series.id]    || [];
+      const prices = listingsData?.[series.id] || {};
+      const cards = items.map(item => ({
+        ...item,
+        sellPrice: prices[item.uuid]?.sellPrice || 0,
+        buyPrice:  prices[item.uuid]?.buyPrice  || 0,
+        seriesId:  series.id,
+      }));
+      // Edge case: listings-only cards not in items
+      const itemUuids = new Set(items.map(i => i.uuid));
+      for (const [uuid, p] of Object.entries(prices)) {
+        if (!itemUuids.has(uuid)) {
+          cards.push({ uuid, name:uuid, position:"", team:"", rarity:"",
+            sellPrice:p.sellPrice, buyPrice:p.buyPrice, isSellable:true, seriesId:series.id });
+        }
+      }
+      result[series.id] = cards;
+    }
+    setAllCards(result);
+    return result;
+  }, []);
+
+  // ── Load from Netlify Blob cache (shared, server-side) ────────────────────
+  const loadFromCache = useCallback(async () => {
+    setLoadState("loading");
+    setLoadProgress({current:0,total:1,series:"Shared server cache",phase:"Loading…"});
+    try {
+      const res = await fetch(API_GET_CACHE);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const cache = await res.json();
+      const hasItems    = cache.items    && cache.items.data;
+      const hasListings = cache.listings && cache.listings.data;
+      if (hasItems)    setItemsTs(cache.items.updatedAt);
+      if (hasListings) setListingsTs(cache.listings.updatedAt);
+      if (hasItems) {
+        mergeAndSet(cache.items.data, hasListings ? cache.listings.data : {});
+        setFetchMethod("server cache");
+        setLoadState("done");
+        return true;
+      }
+    } catch(e) { /* fall through */ }
+    return false;
+  }, [mergeAndSet]);
+
+  // ── Fallback: live fetch via proxy (if cache empty) ───────────────────────
+  const fetchAllLive = useCallback(async () => {
+    setLoadState("loading"); setFetchErrors([]); setFetchMethod(null);
+    const result={}, errors=[];
+    let detectedMethod=null;
+    const totalSteps = SERIES_LIST.length * 2;
+
+    for(let i=0;i<SERIES_LIST.length;i++){
+      const series=SERIES_LIST[i];
+      setLoadProgress({current:i+1,total:totalSteps,series:series.name,phase:"1/2 — Loading cards"});
+      const cards=[]; let page=1,totalPages=1; let itemsOk=false;
+      try{
+        while(page<=totalPages){
+          const url=`${BASE}/apis/items.json?type=mlb_card&series_id=${series.id}&page=${page}`;
+          const{data,method}=await fetchWithFallback(url);
+          if(!data) throw new Error("Items API: all methods failed");
+          if(!detectedMethod){detectedMethod=method;setFetchMethod(method);}
+          totalPages=data.total_pages||1;
+          (data.items||[]).forEach(item=>{ const sellable=item.is_sellable!==false;
+            cards.push({uuid:item.uuid,name:item.name,position:item.display_position||item.type||"",
+              team:item.team||"",rarity:item.rarity||"",sellPrice:0,buyPrice:0,isSellable:sellable,seriesId:series.id,source:"items"}); });
+          page++; await new Promise(r=>setTimeout(r,100));
+        }
+        itemsOk=cards.length>0;
+      }catch{}
+      if(!itemsOk){
+        let lp=1,lt=1;
+        try{
+          while(lp<=lt){
+            const url=`${BASE}/apis/listings.json?type=mlb_card&series_id=${series.id}&page=${lp}`;
+            const{data,method}=await fetchWithFallback(url);
+            if(!data) throw new Error("Listings fallback failed");
+            if(!detectedMethod){detectedMethod=method;setFetchMethod(method);}
+            lt=data.total_pages||1;
+            (data.listings||[]).forEach(l=>{ const sp=l.best_sell_price==="-"?0:Number(l.best_sell_price||0); const bp=l.best_buy_price==="-"?0:Number(l.best_buy_price||0);
+              cards.push({uuid:l.item?.uuid||l.listing_name,name:l.listing_name,position:l.item?.display_position||"",team:l.item?.team||"",rarity:l.item?.rarity||"",
+                sellPrice:sp,buyPrice:bp,isSellable:true,seriesId:series.id,source:"listings-fallback"}); });
+            lp++; await new Promise(r=>setTimeout(r,100));
+          }
+        }catch(e){ errors.push({series:series.name,phase:1,error:`Both APIs failed: ${e.message}`}); setFetchErrors([...errors]); }
+      }
+      result[series.id]=cards;
+    }
+    setAllCards({...result});
+
+    for(let i=0;i<SERIES_LIST.length;i++){
+      const series=SERIES_LIST[i];
+      setLoadProgress({current:SERIES_LIST.length+i+1,total:totalSteps,series:series.name,phase:"2/2 — Loading prices"});
+      const alreadyPriced=(result[series.id]||[]).some(c=>c.source==="listings-fallback");
+      if(alreadyPriced){ setAllCards(prev=>({...prev,[series.id]:[...result[series.id]]})); continue; }
+      const uuidMap={};
+      (result[series.id]||[]).forEach((c,idx)=>{ uuidMap[c.uuid]=idx; });
+      let page=1,totalPages=1;
+      try{
+        while(page<=totalPages){
+          const url=`${BASE}/apis/listings.json?type=mlb_card&series_id=${series.id}&page=${page}`;
+          const{data}=await fetchWithFallback(url);
+          if(!data) throw new Error("Listings API: all methods failed");
+          totalPages=data.total_pages||1;
+          (data.listings||[]).forEach(l=>{ const uuid=l.item?.uuid||""; const sp=l.best_sell_price==="-"?0:Number(l.best_sell_price||0); const bp=l.best_buy_price==="-"?0:Number(l.best_buy_price||0);
+            if(uuid&&uuidMap[uuid]!==undefined){ result[series.id][uuidMap[uuid]].sellPrice=sp; result[series.id][uuidMap[uuid]].buyPrice=bp; result[series.id][uuidMap[uuid]].isSellable=true; }
+            else if(uuid&&uuidMap[uuid]===undefined){ result[series.id].push({uuid,name:l.listing_name,position:l.item?.display_position||"",team:l.item?.team||"",rarity:l.item?.rarity||"",sellPrice:sp,buyPrice:bp,isSellable:true,seriesId:series.id}); }
+          });
+          page++; await new Promise(r=>setTimeout(r,100));
+        }
+      }catch(e){ errors.push({series:series.name,phase:2,error:`Prices unavailable: ${e.message}`}); setFetchErrors([...errors]); }
+      setAllCards(prev=>({...prev,[series.id]:[...result[series.id]]}));
+    }
+    setLoadState(errors.filter(e=>e.phase===1).length===SERIES_LIST.length?"error":"done");
+    setFetchErrors(errors);
+  },[]);
+
+  // On mount: cache first, live fallback
+  useEffect(()=>{
+    (async()=>{ const hit=await loadFromCache(); if(!hit) fetchAllLive(); })();
+  },[]);
+
+  // ── Manual refresh buttons ────────────────────────────────────────────────
+  // ── Background-aware refresh handlers ────────────────────────────────────
+  // Background functions return 202 immediately. We fire the POST, set the
+  // refreshing flag, then poll /api/get-cache every 5s. When the timestamp
+  // changes we know the refresh is done, reload the data, and stop polling.
+
+  const pollIntervalRef = useRef({});
+
+  const startPolling = useCallback((type, previousTs) => {
+    // Clear any existing poll for this type
+    clearInterval(pollIntervalRef.current[type]);
+
+    // Poll every 5 seconds
+    pollIntervalRef.current[type] = setInterval(async () => {
+      try {
+        const res = await fetch(API_GET_CACHE);
+        if (!res.ok) return;
+        const cache = await res.json();
+
+        const isStillRefreshing = type === "items"
+          ? cache.itemsRefreshing
+          : cache.listingsRefreshing;
+
+        const newTs = type === "items"
+          ? cache.items?.updatedAt
+          : cache.listings?.updatedAt;
+
+        // Detect completion: refreshing flag cleared AND timestamp is newer
+        if (!isStillRefreshing && newTs && newTs !== previousTs) {
+          clearInterval(pollIntervalRef.current[type]);
+          if (type === "items") {
+            setRefreshingItems(false);
+            setItemsTs(newTs);
+            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCards||0} cards`, type:"ok" });
+          } else {
+            setRefreshingListings(false);
+            setListingsTs(newTs);
+            setRefreshMsg({ text:`✓ Market prices updated — ${cache.listings?.totalListings||0} listings`, type:"ok" });
+          }
+          // Reload merged data into the app
+          await loadFromCache();
+        }
+      } catch { /* polling failure — keep trying */ }
+    }, 5000);
+
+    // Safety: stop polling after 10 minutes regardless
+    setTimeout(() => {
+      if (pollIntervalRef.current[type]) {
+        clearInterval(pollIntervalRef.current[type]);
+        if (type === "items") { setRefreshingItems(false); setRefreshMsg({ text:"⏱ Items refresh is taking longer than expected — check back shortly", type:"warn" }); }
+        else { setRefreshingListings(false); setRefreshMsg({ text:"⏱ Listings refresh is taking longer than expected — check back shortly", type:"warn" }); }
+      }
+    }, 600_000);
+  }, [loadFromCache]);
+
+  // Check for in-progress refreshes on initial cache load (e.g. scheduled refresh already running)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(API_GET_CACHE);
+        if (!res.ok) return;
+        const cache = await res.json();
+        if (cache.itemsRefreshing) {
+          setRefreshingItems(true);
+          startPolling("items", cache.items?.updatedAt);
+        }
+        if (cache.listingsRefreshing) {
+          setRefreshingListings(true);
+          startPolling("listings", cache.listings?.updatedAt);
+        }
+      } catch {}
+    })();
+    return () => {
+      clearInterval(pollIntervalRef.current.items);
+      clearInterval(pollIntervalRef.current.listings);
+    };
+  }, []);
+
+  const handleRefreshItems = useCallback(async () => {
+    setRefreshingItems(true);
+    setRefreshMsg({ text:"🔄 Card database refresh started in background…", type:"info" });
+    const previousTs = itemsTs;
+    try {
+      // Fire and forget — background function returns 202 immediately
+      await fetch(API_REFRESH_ITEMS, { method:"POST" });
+    } catch(e) {
+      setRefreshMsg({ text:`✗ Could not start items refresh: ${e.message}`, type:"err" });
+      setRefreshingItems(false);
+      return;
+    }
+    startPolling("items", previousTs);
+  }, [itemsTs, startPolling]);
+
+  const handleRefreshListings = useCallback(async () => {
+    setRefreshingListings(true);
+    setRefreshMsg({ text:"🔄 Market price refresh started in background…", type:"info" });
+    const previousTs = listingsTs;
+    try {
+      await fetch(API_REFRESH_LISTINGS, { method:"POST" });
+    } catch(e) {
+      setRefreshMsg({ text:`✗ Could not start listings refresh: ${e.message}`, type:"err" });
+      setRefreshingListings(false);
+      return;
+    }
+    startPolling("listings", previousTs);
+  }, [listingsTs, startPolling]);
+
+  // ── Diagnostics ──────────────────────────────────────────────────────────
+  const runDiag = useCallback(async () => {
+    setDiagRunning(true);
+    const lines=[], results=[];
+    const L=l=>{ lines.push(l); setDiagLog([...lines]); };
+    const R=r=>{ results.push(r); setDiagResults([...results]); };
+    L(`${new Date().toISOString()}`);
+    L(`Origin: ${window.location.href}`);
+    L(`Protocol: ${window.location.protocol}`);
+    L(`Online: ${navigator.onLine}`);
+    L(`UA: ${navigator.userAgent.substring(0,100)}`);
+    L("─────────────────────────────────");
+    if (!navigator.onLine) { R({label:"NETWORK",status:"fail",message:"Device is offline."}); setDiagRunning(false); return; }
+    R({label:"NETWORK",status:"ok",message:"Internet connection active."});
+    // Test Netlify cache endpoint
+    L(`\nNetlify cache endpoint:`);
+    try{
+      const r=await fetch(API_GET_CACHE);
+      L(`  HTTP ${r.status}`); if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d=await r.json();
+      L(`  items: ${d.items?"present ("+d.items.totalCards+" cards)":"null"}`);
+      L(`  listings: ${d.listings?"present ("+d.listings.totalListings+" listings)":"null"}`);
+      R({label:"CACHE",status:"ok",message:`Server cache reachable. Items: ${d.items?.totalCards||0} cards, Listings: ${d.listings?.totalListings||0} prices.`});
+    }catch(e){ L(`  ✗ ${e.message}`); R({label:"CACHE",status:"fail",message:`Cache endpoint failed: ${e.message}. Functions may not be deployed yet.`}); }
+
+    const testListingsUrl=`${BASE}/apis/listings.json?type=mlb_card&series_id=10045&page=1`;
+    const testItemsUrl=`${BASE}/apis/items.json?type=mlb_card&series_id=10045&page=1`;
+    L(`\nDirect (items):`);
+    try{ const r=await fetch(testItemsUrl,{mode:"cors",cache:"no-store"}); L(`  HTTP ${r.status}`); if(!r.ok) throw new Error(`HTTP ${r.status}`); const d=await r.json(); L(`  ✓ items: ${d.items?.length}`); R({label:"DIRECT items",status:"ok",message:`Direct Items API works! Got ${d.items?.length} cards.`}); }
+    catch(e){ L(`  ✗ ${e.name}: ${e.message}`); R({label:"DIRECT items",status:"fail",message:`${e.name}: ${e.message}`}); }
+    L(`\nProxy 1 (items):`);
+    try{ const proxied=PROXIES[0](testItemsUrl); const r=await fetch(proxied,{cache:"no-store"}); L(`  HTTP ${r.status}`); if(!r.ok) throw new Error(`HTTP ${r.status}`); const text=await r.text(); const d=JSON.parse(text); if(!d?.items) throw new Error(`No items field`); L(`  ✓ items: ${d.items.length}`); R({label:"PROXY1 items",status:"ok",message:`Proxy 1 works for Items API. Got ${d.items.length} cards.`}); }
+    catch(e){ L(`  ✗ ${e.name}: ${e.message}`); R({label:"PROXY1 items",status:"fail",message:`${e.name}: ${e.message}`}); }
+    L(`\nProxy 1 (listings):`);
+    try{ const proxied=PROXIES[0](testListingsUrl); const r=await fetch(proxied,{cache:"no-store"}); L(`  HTTP ${r.status}`); if(!r.ok) throw new Error(`HTTP ${r.status}`); const text=await r.text(); const d=JSON.parse(text); if(!d?.listings) throw new Error(`No listings field`); L(`  ✓ listings: ${d.listings.length}`); R({label:"PROXY1 listings",status:"ok",message:`Proxy 1 works for Listings API. Got ${d.listings.length} cards.`}); }
+    catch(e){ L(`  ✗ ${e.name}: ${e.message}`); R({label:"PROXY1 listings",status:"fail",message:`${e.name}: ${e.message}`}); }
+    L(`\nComplete: ${new Date().toISOString()}`);
+    setDiagRunning(false);
+  },[]);
+
+  const handleModalClose = useCallback(()=>{ setShowModal(false); },[]);
+
+  // ── Computed stats ────────────────────────────────────────────────────────
+  const seriesStats=useMemo(()=>SERIES_LIST.map(series=>{
+    const cards=allCards[series.id]||[];
+    const cc=cards.filter(c=>collected[c.uuid]).length;
+    const needed=Math.max(0,series.required-cc);
+    const notC=cards.filter(c=>!collected[c.uuid]).sort((a,b)=>(a.sellPrice||999999999)-(b.sellPrice||999999999));
+    let low=0; notC.slice(0,needed).forEach(c=>{low+=c.sellPrice||0;});
+    const expN=[...notC].sort((a,b)=>(b.buyPrice||0)-(a.buyPrice||0)).slice(0,needed);
+    let high=0; expN.forEach(c=>{high+=c.buyPrice||0;});
+    return{...series,cards,collectedCount:cc,needed,lowCost:low,highCost:high,
+           complete:cc>=series.required,totalCards:cards.length};
+  }),[allCards,collected]);
+
+  const cabreraTotal=useMemo(()=>{
+    const inc=seriesStats.filter(s=>includedSeries[s.id]);
+    if(inc.length<=21) return{low:inc.reduce((a,s)=>a+s.lowCost,0),high:inc.reduce((a,s)=>a+s.highCost,0),count:inc.length};
+    const sorted=[...inc].sort((a,b)=>a.lowCost-b.lowCost).slice(0,21);
+    return{low:sorted.reduce((a,s)=>a+s.lowCost,0),high:sorted.reduce((a,s)=>a+s.highCost,0),count:inc.length};
+  },[seriesStats,includedSeries]);
+
+  const totalCollected=Object.values(collected).filter(Boolean).length;
+  const activeData=seriesStats.find(s=>s.id===activeSeries);
+  const filteredCards=useMemo(()=>{
+    if(!activeData) return[];
+    const q=searchQuery.toLowerCase();
+    return activeData.cards.filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||c.team.toLowerCase().includes(q));
+  },[activeData,searchQuery]);
+
+  const statusInfo=(()=>{
+    if(loadState==="idle") return{dot:"dot-warn",text:"Not loaded"};
+    if(loadState==="loading"){
+      const phase=loadProgress.phase||"";
+      return{dot:"dot-spin",text:`${phase} ${loadProgress.series} (${loadProgress.current}/${loadProgress.total})`};
+    }
+    if(loadState==="error") return{dot:"dot-err",text:"Failed — see troubleshoot"};
+    const tot=Object.values(allCards).reduce((a,c)=>a+c.length,0);
+    const m=fetchMethod?` · ${fetchMethod}`:"";
+    const p1e=fetchErrors.filter(e=>e.phase===1).length;
+    const p2e=fetchErrors.filter(e=>e.phase===2).length;
+    if(p1e>0) return{dot:"dot-warn",text:`${tot} cards${m} · ${p1e} series failed`};
+    if(p2e>0) return{dot:"dot-warn",text:`${tot} cards${m} · prices missing for ${p2e} series`};
+    return{dot:"dot-ok",text:`${tot} cards across ${SERIES_LIST.length} series${m}`};
+  })();
+
+  // ── Timestamp display helpers ─────────────────────────────────────────────
+  const tsClass = (ts) => !ts?"none":hoursAgo(ts)<2?"ok":hoursAgo(ts)<25?"ok":"old";
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      {showModal && (
+        <HostingModal
+          onClose={handleModalClose}
+          diagLog={diagLog} diagResults={diagResults} diagRunning={diagRunning}
+          onRetest={()=>{ setDiagLog([]); setDiagResults([]); runDiag(); }}
+        />
+      )}
+
+      {/* Header */}
+      <div className="app-header">
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+          <div>
+            <div className="eyebrow">MLB The Show 26 · Diamond Dynasty</div>
+            <h1>⚾ Miguel Cabrera Collection Tracker</h1>
+            <div className="sub">99 OVR Milestone · Requires 21 of 22 sub-collections</div>
+          </div>
+          <button
+            onClick={()=>{ setShowModal(true); if(diagResults.length===0) runDiag(); }}
+            style={{background:"none",border:"none",color:"var(--dim)",cursor:"pointer",fontSize:11,fontFamily:"inherit",textDecoration:"underline",whiteSpace:"nowrap",paddingTop:4,flexShrink:0}}
+          >🔧 Troubleshoot</button>
+        </div>
+        <div className="header-stats">
+          <div className="stat-box"><div className="stat-label">Cards Collected</div><div className="stat-value" style={{color:"var(--green)"}}>{totalCollected}</div></div>
+          <div className="stat-box"><div className="stat-label">Included</div><div className="stat-value" style={{color:"var(--accent)"}}>{cabreraTotal.count}/22</div></div>
+          <div className="stat-box"><div className="stat-label">Est. Low Cost</div><div className="stat-value" style={{color:"var(--blue)"}}>{cabreraTotal.low>0?`${(cabreraTotal.low/1000).toFixed(0)}K`:"—"}<span style={{fontSize:10}}> stubs</span></div></div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="tabs">
+        <button className={`tab-btn ${activeTab==="summary"?"active":""}`} onClick={()=>{setActiveTab("summary");setActiveSeries(null);}}>📊 Summary</button>
+        <button className={`tab-btn ${activeTab==="cards"?"active":""}`}   onClick={()=>setActiveTab("cards")}>🃏 Cards</button>
+        <button className={`tab-btn ${activeTab==="csv"?"active":""}`}     onClick={()=>setActiveTab("csv")}>📁 CSV</button>
+      </div>
+
+      {/* ── Refresh Panel ── */}
+      <div className="refresh-panel">
+        {/* Items refresh */}
+        <div className="refresh-block">
+          <div className="refresh-block-label">Card Database (Items API)</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            {refreshingItems && <span className="sdot dot-spin" style={{flexShrink:0}}/>}
+            <div className={`refresh-ts ${refreshingItems?"ok":tsClass(itemsTs)}`}>
+              {refreshingItems
+                ? "Updating in background…"
+                : itemsTs ? `Updated: ${fmtTs(itemsTs)}` : "No data yet"}
+            </div>
+          </div>
+          <div style={{marginTop:4}}>
+            <button
+              className="refresh-btn"
+              onClick={handleRefreshItems}
+              disabled={refreshingItems}
+              title={refreshingItems?"Refresh already in progress":"Fetch latest card list from TheShow.com"}
+            >
+              {refreshingItems
+                ? <><span className="spin-sm"/> In progress…</>
+                : "🔄 Refresh Cards"}
+            </button>
+            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes daily at 2 PM Pacific</div>
+          </div>
+        </div>
+
+        <div className="refresh-divider"/>
+
+        {/* Listings refresh */}
+        <div className="refresh-block">
+          <div className="refresh-block-label">Market Prices (Listings API)</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            {refreshingListings && <span className="sdot dot-spin" style={{flexShrink:0}}/>}
+            <div className={`refresh-ts ${refreshingListings?"ok":tsClass(listingsTs)}`}>
+              {refreshingListings
+                ? "Updating in background…"
+                : listingsTs ? `Updated: ${fmtTs(listingsTs)}` : "No data yet"}
+            </div>
+          </div>
+          <div style={{marginTop:4}}>
+            <button
+              className="refresh-btn"
+              onClick={handleRefreshListings}
+              disabled={refreshingListings}
+              title={refreshingListings?"Refresh already in progress":"Fetch latest market prices from TheShow.com"}
+            >
+              {refreshingListings
+                ? <><span className="spin-sm"/> In progress…</>
+                : "🔄 Refresh Prices"}
+            </button>
+            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes every hour on the hour</div>
+          </div>
+        </div>
+
+        {/* Refresh result message */}
+        {refreshMsg && (
+          <div style={{width:"100%",padding:"6px 10px",borderRadius:6,fontSize:11,
+            background: refreshMsg.type==="ok"?"#052e16":refreshMsg.type==="info"?"#0c1a3a":refreshMsg.type==="warn"?"#1a1500":"#1a0a0a",
+            border:`1px solid ${refreshMsg.type==="ok"?"#065f46":refreshMsg.type==="info"?"#1e3a8a":refreshMsg.type==="warn"?"#78350f":"#7f1d1d"}`,
+            color: refreshMsg.type==="ok"?"var(--green)":refreshMsg.type==="info"?"var(--blue)":refreshMsg.type==="warn"?"var(--accent)":"var(--red)"}}>
+            {refreshMsg.text}
+          </div>
+        )}
+      </div>
+
+      {/* Loading bar */}
+      {loadState==="loading"&&(
+        <div style={{background:"var(--surface2)",padding:"10px 14px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:10}}>
+          <span className="spin-sm"/>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:"var(--accent)",marginBottom:3}}>
+              {loadProgress.phase&&<span style={{color:"var(--dim)",marginRight:6}}>[{loadProgress.phase}]</span>}
+              <strong>{loadProgress.series}</strong>
+              {loadProgress.total>1&&<span style={{color:"var(--dim)",marginLeft:6}}>({loadProgress.current}/{loadProgress.total})</span>}
+              {fetchMethod&&<span style={{color:"var(--dim)",marginLeft:6}}>via {fetchMethod}</span>}
+            </div>
+            <div style={{height:3,background:"var(--border)",borderRadius:2,overflow:"hidden"}}>
+              <div style={{height:"100%",background:"var(--accent)",borderRadius:2,
+                width:`${loadProgress.total>0?(loadProgress.current/loadProgress.total)*100:0}%`,transition:"width .3s ease"}}/>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error alert */}
+      {fetchErrors.length>0&&loadState!=="loading"&&(
+        <div className="alert alert-warn" style={{margin:"10px 14px"}}>
+          {fetchErrors.filter(e=>e.phase===1).length>0
+            ?`⚠️ ${fetchErrors.filter(e=>e.phase===1).length} series failed to load cards.`
+            :`⚠️ Prices unavailable for ${fetchErrors.filter(e=>e.phase===2).length} series (cards still shown).`}
+          <button onClick={()=>{ setShowModal(true); if(diagResults.length===0) runDiag(); }}
+            style={{marginLeft:8,background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"inherit"}}>Troubleshoot</button>
+        </div>
+      )}
+
+      {/* Idle / Error state */}
+      {(loadState==="idle"||loadState==="error")&&activeTab!=="csv"&&(
+        <div style={{textAlign:"center",padding:"40px 16px",color:"var(--dim)"}}>
+          {loadState==="idle"
+            ?(<><div style={{fontSize:32,marginBottom:8}}>⚾</div><div style={{fontSize:13,color:"var(--accent)"}}>Loading…</div></>)
+            :(<><div style={{fontSize:32,marginBottom:8}}>🚫</div><div style={{fontSize:13,color:"var(--red)",marginBottom:4}}>Could not load card data</div><div style={{fontSize:12,marginBottom:14}}>Try refreshing cards above, or use the Troubleshoot link.</div></>)
+          }
+        </div>
+      )}
+
+      {/* ── Summary Tab ── */}
+      {loadState==="done"&&activeTab==="summary"&&(
+        <div className="page">
+          <div className="cabrera-banner">
+            <div className="eyebrow">Collection Goal</div>
+            <h2>99 OVR Milestone Miguel Cabrera</h2>
+            <div className="note">Check exactly 21 of 22 collections · Uncheck one to skip it</div>
+            <div className="cabrera-costs">
+              <div><div className="cost-label">Low Cost</div><div className="cost-value" style={{color:"var(--green)"}}>{cabreraTotal.low.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
+              <div><div className="cost-label">High Cost</div><div className="cost-value" style={{color:"var(--red)"}}>{cabreraTotal.high.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
+            </div>
+          </div>
+          {cabreraTotal.count>21&&<div className="alert alert-warn">⚠️ {cabreraTotal.count} checked — only 21 needed. Totals show cheapest 21. Uncheck one to exclude it manually.</div>}
+          {cabreraTotal.count<21&&<div className="alert alert-err">⚠️ Only {cabreraTotal.count} checked — need at least 21.</div>}
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>✓</th><th className="left">Collection</th><th>Need</th><th>Total</th><th>Have</th><th>Left</th><th>Low (stubs)</th><th>High (stubs)</th><th>%</th><th></th></tr></thead>
+              <tbody>
+                {seriesStats.map(s=>(
+                  <tr key={s.id} className={includedSeries[s.id]?"":"xrow"}>
+                    <td className="center"><input type="checkbox" checked={!!includedSeries[s.id]} onChange={()=>setIncludedSeries(p=>({...p,[s.id]:!p[s.id]}))} style={{accentColor:"#e8b84b"}}/></td>
+                    <td className="left" style={{fontWeight:"bold",color:s.complete?"var(--green)":"var(--text)"}}>{s.name}</td>
+                    <td className="center" style={{color:"var(--dim)"}}>{s.required}</td>
+                    <td className="center" style={{color:"var(--dim)"}}>{s.totalCards}</td>
+                    <td className="center" style={{color:"var(--green)"}}>{s.collectedCount}</td>
+                    <td className="center" style={{color:s.needed===0?"var(--green)":"var(--accent)"}}>{s.needed}</td>
+                    <td className="right" style={{color:"var(--blue)"}}>{s.lowCost>0?s.lowCost.toLocaleString():"—"}</td>
+                    <td className="right" style={{color:s.highCost>0?"var(--red)":"var(--dim)"}}>{s.highCost>0?s.highCost.toLocaleString():"—"}</td>
+                    <td className="center">{s.complete?<span className="prog-pill prog-done">✓</span>:<span className="prog-pill">{Math.round((s.collectedCount/s.required)*100)}%</span>}</td>
+                    <td className="center"><button className="view-btn" onClick={()=>{setActiveSeries(s.id);setActiveTab("cards");setSearchQuery("");}}>→</button></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2} className="left" style={{color:"var(--accent)"}}>🏆 MIGUEL CABRERA (21/22)</td>
+                  <td className="center">21</td>
+                  <td className="center" style={{color:"var(--dim)"}}>—</td>
+                  <td className="center" style={{color:"var(--dim)"}}>—</td>
+                  <td className="center" style={{color:"var(--dim)"}}>—</td>
+                  <td className="right" style={{color:"var(--green)"}}>{cabreraTotal.low.toLocaleString()}</td>
+                  <td className="right" style={{color:"var(--red)"}}>{cabreraTotal.high.toLocaleString()}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cards Tab ── */}
+      {loadState==="done"&&activeTab==="cards"&&(
+        <div className="page">
+          <div className="pill-row">
+            {SERIES_LIST.map(s=>(
+              <button key={s.id} className={`pill ${activeSeries===s.id?"active":""}`} onClick={()=>{setActiveSeries(s.id);setSearchQuery("");}}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {activeSeries&&activeData?(
+            <div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:15,fontWeight:"bold"}}>{activeData.name}</div>
+                <div style={{fontSize:11,color:"var(--dim)",marginTop:2}}>{activeData.collectedCount}/{activeData.required} required · {activeData.needed} still needed · {activeData.totalCards} total</div>
+              </div>
+              <input className="search-input" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search name, position, team…"/>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Have</th><th className="left">Card Name</th><th>Rar</th><th>Pos</th><th>Team</th><th className="left">Where to Find</th><th>Buy Now</th><th>Sell</th></tr></thead>
+                  <tbody>
+                    {filteredCards.length===0&&<tr><td colSpan={8} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
+                    {filteredCards.map(card=>(
+                      <tr key={card.uuid} className={collected[card.uuid]?"crow":""}>
+                        <td className="center"><input type="checkbox" checked={!!collected[card.uuid]} onChange={()=>saveCollected({...collected,[card.uuid]:!collected[card.uuid]})} style={{accentColor:"#34d399"}}/></td>
+                        <td className="left" style={{fontWeight:collected[card.uuid]?"bold":"normal",color:collected[card.uuid]?"var(--green)":"var(--text)",maxWidth:150,whiteSpace:"normal",lineHeight:1.3}}>{card.name}</td>
+                        <td className="center"><span className="rbadge" style={{background:rarityBg(card.rarity)}}>{card.rarity?card.rarity.charAt(0).toUpperCase():"?"}</span></td>
+                        <td className="center" style={{color:"var(--dim)",fontSize:11}}>{card.position}</td>
+                        <td className="center" style={{color:"var(--dim)",fontSize:10}}>{card.team}</td>
+                        <td className="left" style={{color:"var(--dim)",fontSize:11,whiteSpace:"normal",maxWidth:130,lineHeight:1.3}}>
+                          {card.isSellable&&(card.sellPrice>0||card.buyPrice>0)
+                            ?"Community Market"
+                            :card.isSellable
+                              ?(SOURCE_HINTS[activeSeries]?`${SOURCE_HINTS[activeSeries]} / Market`:"Community Market")
+                              :(SOURCE_HINTS[activeSeries]||"Program Reward")}
+                        </td>
+                        <td className="right" style={{color:card.buyPrice>0?"var(--accent)":"var(--dim)"}}>{card.buyPrice>0?card.buyPrice.toLocaleString():"—"}</td>
+                        <td className="right" style={{color:card.sellPrice>0?"var(--blue)":"var(--dim)"}}>{card.sellPrice>0?card.sellPrice.toLocaleString():"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="cost-chips">
+                <div className="chip"><span style={{color:"var(--dim)"}}>Low to finish: </span><span style={{fontWeight:"bold",color:"var(--green)"}}>{activeData.lowCost.toLocaleString()} stubs</span></div>
+                <div className="chip"><span style={{color:"var(--dim)"}}>High to finish: </span><span style={{fontWeight:"bold",color:"var(--red)"}}>{activeData.highCost.toLocaleString()} stubs</span></div>
+              </div>
+            </div>
+          ):(
+            <div className="empty">👆 Select a collection above to browse its cards</div>
+          )}
+        </div>
+      )}
+
+      {/* ── CSV Tab ── */}
+      {activeTab==="csv"&&(
+        <CSVTab allCards={allCards} collected={collected} onImport={handleImport} loadState={loadState}/>
+      )}
+
+      {/* Status bar */}
+      <div className="status-bar">
+        <div className={`sdot ${statusInfo.dot}`}/>
+        <span>{statusInfo.text}</span>
+      </div>
+      <div className="legend">
+        <span><span style={{color:"var(--green)"}}>■</span> Collected</span>
+        <span><span style={{color:"var(--blue)"}}>■</span> Sell = market pays you</span>
+        <span><span style={{color:"var(--accent)"}}>■</span> Buy Now = instant cost</span>
+        <span>Low = cheapest needed · High = buy-now prices · Shared cache from Netlify</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
