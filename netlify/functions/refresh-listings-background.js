@@ -93,7 +93,8 @@ export default async function handler(req, context) {
   await store.setJSON("listings-status", { status: "done", completedAt: payload.updatedAt });
 }
 
+// Scheduled functions must NOT have a path — Netlify forbids it.
+// Manual HTTP triggers use the separate refresh-listings-http.js function.
 export const config = {
   schedule: "0 * * * *",
-  path: "/api/refresh-listings",
 };
