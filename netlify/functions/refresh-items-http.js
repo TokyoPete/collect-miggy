@@ -1,73 +1,168 @@
 // netlify/functions/refresh-items-http.js
 //
-// HTTP-triggered function for manual "Refresh Cards" button in the frontend.
-// This is a regular (synchronous) function — it returns 202 immediately and
-// kicks off the same work as the scheduled background function.
+// HTTP-triggered equivalent of refresh-items-background.js.
+// Called by the "Refresh Cards" button in the frontend.
+// Returns 202 immediately; uses context.waitUntil to run in background.
+// Frontend polls /api/get-cache every 5s to detect completion.
 //
-// Because Netlify does not allow scheduled functions to have a custom path,
-// this separate function handles the HTTP POST and writes the same blobs.
-// The frontend polls /api/get-cache to detect when the work is done.
+// Two-phase process:
+//   Phase 1 — Items API (paginated): harvest all mlb_card UUIDs
+//   Phase 2 — Item API (per UUID, batched): fetch series + location for each card
 //
-// URL: /api/refresh-items  (POST)
+// URL: POST /api/refresh-items
 
 import { getStore } from "@netlify/blobs";
 
 const BASE = "https://mlb26.theshow.com";
 
-const SERIES_LIST = [
-  { id: "10028", name: "World Baseball Classic" },
-  { id: "10004", name: "All-Star"               },
-  { id: "10046", name: "Jolt"                   },
-  { id: "10035", name: "The Negro Leagues"       },
-  { id: "10017", name: "Topps Now"              },
-  { id: "10050", name: "New Threads"            },
-  { id: "10044", name: "Contributor"            },
-  { id: "10005", name: "Awards"                 },
-  { id: "10002", name: "Breakout"               },
-  { id: "10039", name: "Spring Breakout"        },
-  { id: "10020", name: "2nd Half Heroes"        },
-  { id: "10043", name: "Egg Hunt"               },
-  { id: "10047", name: "Spotlight"              },
-  { id: "10003", name: "Veteran"                },
-  { id: "10006", name: "Postseason"             },
-  { id: "10062", name: "St. Patrick's Day"      },
-  { id: "10001", name: "Rookie"                 },
-  { id: "10068", name: "Mexico City Series"     },
-  { id: "10034", name: "Standout"               },
-  { id: "10049", name: "Cornerstone"            },
-  { id: "10022", name: "Milestone"              },
-  { id: "10045", name: "Last Ride"              },
-];
+const SERIES_NAME_TO_ID = {
+  "World Baseball Classic": "10028",
+  "All-Star":               "10004",
+  "Jolt":                   "10046",
+  "The Negro Leagues":      "10035",
+  "Topps Now":              "10017",
+  "New Threads":            "10050",
+  "Contributor":            "10044",
+  "Awards":                 "10005",
+  "Breakout":               "10002",
+  "Spring Breakout":        "10039",
+  "2nd Half Heroes":        "10020",
+  "Egg Hunt":               "10043",
+  "Spotlight":              "10047",
+  "Veteran":                "10003",
+  "Postseason":             "10006",
+  "St. Patrick's Day":      "10062",
+  "Rookie":                 "10001",
+  "Mexico City Series":     "10068",
+  "Standout":               "10034",
+  "Cornerstone":            "10049",
+  "Milestone":              "10022",
+  "Last Ride":              "10045",
+};
 
-async function fetchSeriesPages(seriesId) {
-  const cards = [];
+const REQUIRED_COUNTS = {
+  "10028": 142, "10004": 39,  "10046": 30,  "10035": 27,
+  "10017": 24,  "10050": 23,  "10044": 18,  "10005": 18,
+  "10002": 17,  "10039": 16,  "10020": 15,  "10043": 15,
+  "10047": 12,  "10003": 11,  "10006": 9,   "10062": 8,
+  "10001": 6,   "10068": 4,   "10034": 3,   "10049": 2,
+  "10022": 2,   "10045": 1,
+};
+
+async function harvestAllUUIDs() {
+  const uuids = [];
   let page = 1, totalPages = 1;
   while (page <= totalPages) {
-    const res = await fetch(
-      `${BASE}/apis/items.json?type=mlb_card&series_id=${seriesId}&page=${page}`,
-      { headers: { "User-Agent": "collect-miggy-netlify/1.0" } }
-    );
-    if (!res.ok) throw new Error(`Items API HTTP ${res.status} series=${seriesId} page=${page}`);
+    const res = await fetch(`${BASE}/apis/items.json?type=mlb_card&page=${page}`, {
+      headers: { "User-Agent": "collect-miggy-netlify/1.0" },
+    });
+    if (!res.ok) throw new Error(`Items API HTTP ${res.status} page=${page}`);
     const data = await res.json();
     totalPages = data.total_pages || 1;
     for (const item of data.items || []) {
-      cards.push({
-        uuid:       item.uuid,
-        name:       item.name,
-        position:   item.display_position || item.type || "",
-        team:       item.team || "",
-        rarity:     item.rarity || "",
-        isSellable: item.is_sellable !== false,
-      });
+      if (item.uuid) uuids.push(item.uuid);
     }
     page++;
-    if (page <= totalPages) await new Promise(r => setTimeout(r, 80));
+    if (page <= totalPages) await new Promise(r => setTimeout(r, 100));
   }
-  return cards;
+  return uuids;
+}
+
+async function fetchItemDetail(uuid) {
+  const res = await fetch(`${BASE}/apis/item.json?uuid=${uuid}`, {
+    headers: { "User-Agent": "collect-miggy-netlify/1.0" },
+  });
+  if (!res.ok) throw new Error(`Item API HTTP ${res.status} uuid=${uuid}`);
+  return await res.json();
+}
+
+async function fetchItemDetailsBatched(uuids, batchSize = 10, delayMs = 150) {
+  const results = [];
+  for (let i = 0; i < uuids.length; i += batchSize) {
+    const batch = uuids.slice(i, i + batchSize);
+    const batchResults = await Promise.allSettled(
+      batch.map(uuid => fetchItemDetail(uuid))
+    );
+    for (const r of batchResults) {
+      if (r.status === "fulfilled") results.push(r.value);
+    }
+    if (i + batchSize < uuids.length) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return results;
+}
+
+async function runRefresh(store) {
+  await store.setJSON("items-status", {
+    status: "refreshing",
+    phase: "Harvesting UUIDs…",
+    startedAt: new Date().toISOString(),
+  });
+
+  // Phase 1
+  const allUUIDs = await harvestAllUUIDs();
+
+  await store.setJSON("items-status", {
+    status: "refreshing",
+    phase: `Fetching details for ${allUUIDs.length} cards…`,
+    startedAt: new Date().toISOString(),
+  });
+
+  // Phase 2
+  const itemDetails = await fetchItemDetailsBatched(allUUIDs, 10, 150);
+
+  // Bucket by series
+  const bySeriesId = {};
+  for (const id of Object.values(SERIES_NAME_TO_ID)) {
+    bySeriesId[id] = [];
+  }
+
+  for (const item of itemDetails) {
+    const seriesId = SERIES_NAME_TO_ID[item.series];
+    if (!seriesId) continue;
+
+    const locations = Array.isArray(item.locations) ? item.locations : [];
+    const isSellable = locations.some(l =>
+      l.toUpperCase().includes("MARKET") || l.toUpperCase().includes("EXCHANGE")
+    );
+
+    bySeriesId[seriesId].push({
+      uuid:      item.uuid,
+      name:      item.name,
+      position:  item.display_position || "",
+      team:      item.team || "",
+      rarity:    item.rarity || "",
+      locations,
+      isSellable,
+    });
+  }
+
+  const data = {};
+  for (const [seriesId, cards] of Object.entries(bySeriesId)) {
+    data[seriesId] = {
+      cards,
+      totalInCollection: REQUIRED_COUNTS[seriesId] || 0,
+      totalInDatabase:   cards.length,
+    };
+  }
+
+  const payload = {
+    updatedAt:  new Date().toISOString(),
+    totalCards: Object.values(data).reduce((a, s) => a + s.cards.length, 0),
+    totalUUIDs: allUUIDs.length,
+    data,
+  };
+
+  await store.setJSON("items", payload);
+  await store.setJSON("items-status", {
+    status: "done",
+    completedAt: payload.updatedAt,
+    totalCards: payload.totalCards,
+  });
 }
 
 export default async function handler(req, context) {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
@@ -77,45 +172,27 @@ export default async function handler(req, context) {
 
   const store = getStore({ name: "card-cache", consistency: "strong" });
 
-  // Mark refresh as in-progress so the frontend poller can detect it
+  // Mark as starting before returning 202
   await store.setJSON("items-status", {
     status: "refreshing",
+    phase: "Starting…",
     startedAt: new Date().toISOString(),
   });
 
-  // Respond 202 immediately so the frontend isn't blocked
-  // Use context.waitUntil to run the actual fetch in the background
-  const work = (async () => {
-    const result = {}, errors = [];
-    for (const series of SERIES_LIST) {
-      try {
-        result[series.id] = await fetchSeriesPages(series.id);
-      } catch (e) {
-        errors.push({ series: series.name, error: e.message });
-        result[series.id] = [];
-      }
-    }
-    const payload = {
-      updatedAt:   new Date().toISOString(),
-      seriesCount: SERIES_LIST.length,
-      totalCards:  Object.values(result).reduce((a, c) => a + c.length, 0),
-      errors,
-      data: result,
-    };
-    await store.setJSON("items", payload);
-    await store.setJSON("items-status", {
-      status: "done",
-      completedAt: payload.updatedAt,
-    });
-  })();
+  context.waitUntil(
+    runRefresh(store).catch(async e => {
+      await store.setJSON("items-status", {
+        status: "error",
+        error: e.message,
+        failedAt: new Date().toISOString(),
+      });
+    })
+  );
 
-  // context.waitUntil keeps the function alive after the 202 is sent
-  context.waitUntil(work);
-
-  return new Response(JSON.stringify({ ok: true, message: "Items refresh started" }), {
-    status: 202,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
-  });
+  return new Response(
+    JSON.stringify({ ok: true, message: "Card database refresh started in background" }),
+    { status: 202, headers: { "Content-Type": "application/json", ...corsHeaders() } }
+  );
 }
 
 function corsHeaders() {

@@ -1,6 +1,6 @@
 // netlify/functions/get-cache.js
-// Public read endpoint — serves cached card data, prices, and refresh status to any browser.
-// Called on page load and polled every 5 seconds when a background refresh is in progress.
+// Serves cached card data, prices, and refresh status to any browser.
+// Called on page load and polled every 5s during a background refresh.
 
 import { getStore } from "@netlify/blobs";
 
@@ -11,7 +11,6 @@ export default async function handler(req, context) {
 
   const store = getStore({ name: "card-cache", consistency: "strong" });
 
-  // Fetch all four blobs in parallel for speed
   const [itemsPayload, listingsPayload, itemsStatus, listingsStatus] =
     await Promise.all([
       store.get("items",           { type: "json" }).catch(() => null),
@@ -23,34 +22,31 @@ export default async function handler(req, context) {
   const response = {
     items: itemsPayload
       ? {
-          updatedAt:   itemsPayload.updatedAt,
-          totalCards:  itemsPayload.totalCards,
-          seriesCount: itemsPayload.seriesCount,
-          errors:      itemsPayload.errors || [],
-          data:        itemsPayload.data,
+          updatedAt:  itemsPayload.updatedAt,
+          totalCards: itemsPayload.totalCards,
+          totalUUIDs: itemsPayload.totalUUIDs,
+          data:       itemsPayload.data,
         }
       : null,
     listings: listingsPayload
       ? {
           updatedAt:     listingsPayload.updatedAt,
           totalListings: listingsPayload.totalListings,
-          seriesCount:   listingsPayload.seriesCount,
-          errors:        listingsPayload.errors || [],
           data:          listingsPayload.data,
         }
       : null,
-    // Lightweight status fields — used by the frontend to poll for completion
-    // without re-downloading the full data blob every time
-    itemsRefreshing:    itemsStatus?.status    === "refreshing",
+    // Status fields — polled by frontend to detect in-progress refreshes
+    itemsRefreshing:    itemsStatus?.status === "refreshing",
+    itemsPhase:         itemsStatus?.phase  || null,   // e.g. "Fetching details for 2400 cards…"
+    itemsError:         itemsStatus?.status === "error" ? itemsStatus.error : null,
     listingsRefreshing: listingsStatus?.status === "refreshing",
+    listingsError:      listingsStatus?.status === "error" ? listingsStatus.error : null,
   };
 
   return new Response(JSON.stringify(response), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      // Short cache — 15s max so polling detects completion quickly
-      // stale-while-revalidate lets the browser serve stale while refetching
       "Cache-Control": "public, max-age=15, stale-while-revalidate=30",
       ...corsHeaders(),
     },
