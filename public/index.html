@@ -1597,10 +1597,17 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
   const [refreshingCard,   setRefreshingCard]   = useState(null); // uuid being refreshed
   const [refreshingSeries, setRefreshingSeries] = useState(false);
 
-  const isOtherSeries  = activeSeries?.startsWith("other:");
-  const otherSeriesName = isOtherSeries ? activeSeries.slice(6) : null;
+  // All hooks must be declared before any conditional logic
   const [sortField, setSortField] = useState("ovr");
   const [sortDir,   setSortDir]   = useState("desc"); // "asc"|"desc"
+
+  // Derived values (non-hook, after all hooks)
+  const isOtherSeries   = activeSeries?.startsWith("other:");
+  const otherSeriesName = isOtherSeries ? activeSeries.slice(6) : null;
+
+  const activeData = isOtherSeries
+    ? { name:otherSeriesName, cards:otherCards[otherSeriesName]||[], required:0, collectedCount:0, needed:0, totalCards:(otherCards[otherSeriesName]||[]).length, lowCost:0, highCost:0, complete:false, countMismatch:false, id:activeSeries }
+    : seriesStats.find(s=>s.id===activeSeries);
 
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d==="asc"?"desc":"asc");
@@ -1612,8 +1619,6 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
     if (sortField !== field) return <span style={{opacity:.25,fontSize:9,marginLeft:3}}>⇅</span>;
     return <span style={{fontSize:9,marginLeft:3}}>{sortDir==="asc"?"↑":"↓"}</span>;
   };
-    ? { name:otherSeriesName, cards:otherCards[otherSeriesName]||[], required:0, collectedCount:0, needed:0, totalCards:(otherCards[otherSeriesName]||[]).length, lowCost:0, highCost:0, complete:false, countMismatch:false, id:activeSeries }
-    : seriesStats.find(s=>s.id===activeSeries);
 
   const filteredCards = useMemo(()=>{
     if(!activeData) return[];
