@@ -590,20 +590,28 @@ const ITEMS_CSV_FILENAME = "cabrera_items.csv";
 const ITEMS_CSV_HEADERS  = ["uuid","name","position","team","rarity","ovr","series","locations","isSellable"];
 const LOCATIONS_SEPARATOR = " | "; // consistent separator for locations array in CSV
 
-function buildItemsCSV(allCards) {
+function buildItemsCSV(allCards, otherCards) {
   const rows = [ITEMS_CSV_HEADERS.join(",")];
+  // Cabrera series
   for (const series of SERIES_LIST) {
     for (const card of (allCards[series.id]||[])) {
       const locs = Array.isArray(card.locations) ? card.locations.join(LOCATIONS_SEPARATOR) : (card.locations||"");
       rows.push([
-        csvEscape(card.uuid),
-        csvEscape(card.name),
-        csvEscape(card.position),
-        csvEscape(card.team),
-        csvEscape(card.rarity),
-        csvEscape(card.ovr||""),
-        csvEscape(series.name),
-        csvEscape(locs),
+        csvEscape(card.uuid), csvEscape(card.name), csvEscape(card.position),
+        csvEscape(card.team), csvEscape(card.rarity), csvEscape(card.ovr||""),
+        csvEscape(card.series||series.name), csvEscape(locs),
+        csvEscape(card.isSellable?"true":"false"),
+      ].join(","));
+    }
+  }
+  // Other series
+  for (const [seriesName, cards] of Object.entries(otherCards)) {
+    for (const card of (cards||[])) {
+      const locs = Array.isArray(card.locations) ? card.locations.join(LOCATIONS_SEPARATOR) : (card.locations||"");
+      rows.push([
+        csvEscape(card.uuid), csvEscape(card.name), csvEscape(card.position),
+        csvEscape(card.team), csvEscape(card.rarity), csvEscape(card.ovr||""),
+        csvEscape(card.series||seriesName), csvEscape(locs),
         csvEscape(card.isSellable?"true":"false"),
       ].join(","));
     }
@@ -682,7 +690,7 @@ function parseItemsCSV(text) {
   return { ok:true, cards, errors, skipped };
 }
 
-function CSVTab({ allCards, collected, onImport, loadState, onItemsImported }) {
+function CSVTab({ allCards, otherCards={}, collected, onImport, loadState, onItemsImported }) {
   // ── Collection inventory state ──
   const fileInputRef    = useRef();
   const itemsFileRef    = useRef();
@@ -698,7 +706,7 @@ function CSVTab({ allCards, collected, onImport, loadState, onItemsImported }) {
 
   const totalCollected = Object.values(collected).filter(Boolean).length;
   const canExport = loadState === "done" && totalCollected > 0;
-  const totalItems = Object.values(allCards).reduce((a,c)=>a+c.length,0);
+  const totalItems = Object.values(allCards).reduce((a,c)=>a+c.length,0) + Object.values(otherCards).reduce((a,c)=>a+c.length,0);
   const canExportItems = totalItems > 0;
 
   const cardLookup = useMemo(()=>{
@@ -741,7 +749,7 @@ function CSVTab({ allCards, collected, onImport, loadState, onItemsImported }) {
   // ── Items database handlers ──
   const handleExportItems = () => {
     if(!canExportItems) return;
-    const csv = buildItemsCSV(allCards);
+    const csv = buildItemsCSV(allCards, otherCards);
     const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download=ITEMS_CSV_FILENAME;
@@ -908,16 +916,18 @@ function CSVTab({ allCards, collected, onImport, loadState, onItemsImported }) {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App() {
-  const [allCards,       setAllCards]       = useState({});
+  const [allCards,       setAllCards]       = useState({});  // { [seriesId]: Card[] } — Cabrera series
+  const [otherCards,     setOtherCards]     = useState({});  // { [seriesName]: Card[] } — non-Cabrera
+  const [seriesMeta,     setSeriesMeta]     = useState([]); // from meta API via items blob
+  const [manifestInfo,   setManifestInfo]   = useState(null); // integrity check
   const [loadState,      setLoadState]      = useState("idle");
-  const [loadProgress,   setLoadProgress]   = useState({current:0,total:SERIES_LIST.length*2,series:"",phase:""});
-  const [fetchErrors,    setFetchErrors]    = useState([]);
   const [fetchMethod,    setFetchMethod]    = useState(null);
 
-  // Cache timestamps
+  // Cache timestamps and refresh state
   const [itemsTs,            setItemsTs]            = useState(null);
   const [listingsTs,         setListingsTs]         = useState(null);
   const [itemsPhase,         setItemsPhase]         = useState(null);
+  const [itemsPct,           setItemsPct]           = useState(null); // 0-100
   const [refreshingItems,    setRefreshingItems]    = useState(false);
   const [refreshingListings, setRefreshingListings] = useState(false);
   const [cancelPending,      setCancelPending]      = useState(false);
@@ -948,134 +958,89 @@ function App() {
 
   const handleImport = useCallback(newCollected => { saveCollected(newCollected); }, [saveCollected]);
 
-  // ── Merge items data + listings prices into allCards ──────────────────────
-  // itemsData shape: { [seriesId]: { cards: [...], totalInCollection, totalInDatabase } }
-  // listingsData shape: { [seriesId]: { [uuid]: { sellNowPrice, buyNowPrice } } }
-  //
-  // Only cards present in the items blob are shown. Listing prices are overlaid
-  // by UUID. We deliberately do NOT create ghost rows for UUIDs that exist only
-  // in listings — those appear after a delete before the listings blob is cleaned,
-  // or before the items refresh has run for a new card.
-  const mergeAndSet = useCallback((itemsData, listingsData) => {
+  // ── Merge new blob shape into app state ───────────────────────────────────
+  // New items blob shape:
+  //   cabData:   { [series_id]: { cards[], totalInCollection, totalInDatabase } }
+  //   otherData: { [series_name]: { cards[], totalInDatabase } }
+  // listingsData: { [series_id]: { [uuid]: { sellNowPrice, buyNowPrice } } }
+  const mergeAndSet = useCallback((cache) => {
+    const cabData      = cache.items?.cabData      || {};
+    const otherData    = cache.items?.otherData    || {};
+    const listingsData = cache.listings?.data      || {};
+    const meta         = cache.items?.seriesMeta   || [];
+
+    // Build allCards — Cabrera series only, prices overlaid by UUID
     const result = {};
     for (const series of SERIES_LIST) {
-      const seriesItems = itemsData?.[series.id];
-      const cards       = seriesItems?.cards || [];
-      const prices      = listingsData?.[series.id] || {};
-
-      const merged = cards.map(card => {
-        const p = prices[card.uuid] || {};
-        return {
-          ...card,
-          sellNowPrice: p.sellNowPrice || 0,
-          buyNowPrice:  p.buyNowPrice  || 0,
-          seriesId:     series.id,
-        };
-      });
-
-      result[series.id] = merged;
+      const seriesData = cabData[series.id];
+      const cards      = seriesData?.cards || [];
+      const prices     = listingsData[series.id] || {};
+      result[series.id] = cards.map(card => ({
+        ...card,
+        // Display name fix: "Mexico City" → "Mexico City Series"
+        seriesDisplayName: card.series === "Mexico City" ? "Mexico City Series" : card.series,
+        sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
+        buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
+        seriesId: series.id,
+      }));
     }
     setAllCards(result);
-    return result;
+
+    // Build otherCards — non-Cabrera series, prices overlaid where available
+    const otherResult = {};
+    for (const [seriesName, sd] of Object.entries(otherData)) {
+      const seriesId = meta.find(s=>s.name===seriesName)?.series_id;
+      const prices   = seriesId ? (listingsData[String(seriesId)] || {}) : {};
+      otherResult[seriesName] = (sd.cards||[]).map(card => ({
+        ...card,
+        sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
+        buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
+        seriesId: seriesId ? String(seriesId) : null,
+      }));
+    }
+    setOtherCards(otherResult);
+    setSeriesMeta(meta);
+
+    if (cache.manifest) setManifestInfo(cache.manifest);
   }, []);
 
-  // ── Load from Netlify Blob cache (shared, server-side) ────────────────────
+  // ── Load from Netlify Blob cache ──────────────────────────────────────────
   const loadFromCache = useCallback(async () => {
     setLoadState("loading");
-    setLoadProgress({current:0,total:1,series:"Shared server cache",phase:"Loading…"});
     try {
       const res = await fetch(API_GET_CACHE);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const cache = await res.json();
-      const hasItems    = cache.items    && cache.items.data;
-      const hasListings = cache.listings && cache.listings.data;
+
+      const hasItems    = !!(cache.items?.cabData);
+      const hasListings = !!(cache.listings?.data);
+
       if (hasItems)    setItemsTs(cache.items.updatedAt);
       if (hasListings) setListingsTs(cache.listings.updatedAt);
+      if (cache.manifest) setManifestInfo(cache.manifest);
+
+      // Propagate refresh-in-progress state
+      if (cache.itemsRefreshing) {
+        setRefreshingItems(true);
+        if (cache.itemsPctComplete !== null) setItemsPct(cache.itemsPctComplete);
+        if (cache.itemsPhase) setItemsPhase(cache.itemsPhase);
+      }
+      if (cache.itemsCancelled) setItemsCancelled(true);
+
       if (hasItems) {
-        mergeAndSet(cache.items.data, hasListings ? cache.listings.data : {});
+        mergeAndSet(cache);
         setFetchMethod("server cache");
         setLoadState("done");
         return true;
       }
-    } catch(e) { /* fall through */ }
+    } catch(e) { /* fall through to idle */ }
+    setLoadState("idle");
     return false;
   }, [mergeAndSet]);
 
-  // ── Fallback: live fetch via proxy (if cache empty) ───────────────────────
-  const fetchAllLive = useCallback(async () => {
-    setLoadState("loading"); setFetchErrors([]); setFetchMethod(null);
-    const result={}, errors=[];
-    let detectedMethod=null;
-    const totalSteps = SERIES_LIST.length * 2;
-
-    for(let i=0;i<SERIES_LIST.length;i++){
-      const series=SERIES_LIST[i];
-      setLoadProgress({current:i+1,total:totalSteps,series:series.name,phase:"1/2 — Loading cards"});
-      const cards=[]; let page=1,totalPages=1; let itemsOk=false;
-      try{
-        while(page<=totalPages){
-          const url=`${BASE}/apis/items.json?type=mlb_card&series_id=${series.id}&page=${page}`;
-          const{data,method}=await fetchWithFallback(url);
-          if(!data) throw new Error("Items API: all methods failed");
-          if(!detectedMethod){detectedMethod=method;setFetchMethod(method);}
-          totalPages=data.total_pages||1;
-          (data.items||[]).forEach(item=>{ const sellable=item.is_sellable!==false;
-            cards.push({uuid:item.uuid,name:item.name,position:item.display_position||item.type||"",
-              team:item.team||"",rarity:item.rarity||"",sellPrice:0,buyPrice:0,isSellable:sellable,seriesId:series.id,source:"items"}); });
-          page++; await new Promise(r=>setTimeout(r,100));
-        }
-        itemsOk=cards.length>0;
-      }catch{}
-      if(!itemsOk){
-        let lp=1,lt=1;
-        try{
-          while(lp<=lt){
-            const url=`${BASE}/apis/listings.json?type=mlb_card&series_id=${series.id}&page=${lp}`;
-            const{data,method}=await fetchWithFallback(url);
-            if(!data) throw new Error("Listings fallback failed");
-            if(!detectedMethod){detectedMethod=method;setFetchMethod(method);}
-            lt=data.total_pages||1;
-            (data.listings||[]).forEach(l=>{ const sp=l.best_sell_price==="-"?0:Number(l.best_sell_price||0); const bp=l.best_buy_price==="-"?0:Number(l.best_buy_price||0);
-              cards.push({uuid:l.item?.uuid||l.listing_name,name:l.listing_name,position:l.item?.display_position||"",team:l.item?.team||"",rarity:l.item?.rarity||"",
-                sellPrice:sp,buyPrice:bp,isSellable:true,seriesId:series.id,source:"listings-fallback"}); });
-            lp++; await new Promise(r=>setTimeout(r,100));
-          }
-        }catch(e){ errors.push({series:series.name,phase:1,error:`Both APIs failed: ${e.message}`}); setFetchErrors([...errors]); }
-      }
-      result[series.id]=cards;
-    }
-    setAllCards({...result});
-
-    for(let i=0;i<SERIES_LIST.length;i++){
-      const series=SERIES_LIST[i];
-      setLoadProgress({current:SERIES_LIST.length+i+1,total:totalSteps,series:series.name,phase:"2/2 — Loading prices"});
-      const alreadyPriced=(result[series.id]||[]).some(c=>c.source==="listings-fallback");
-      if(alreadyPriced){ setAllCards(prev=>({...prev,[series.id]:[...result[series.id]]})); continue; }
-      const uuidMap={};
-      (result[series.id]||[]).forEach((c,idx)=>{ uuidMap[c.uuid]=idx; });
-      let page=1,totalPages=1;
-      try{
-        while(page<=totalPages){
-          const url=`${BASE}/apis/listings.json?type=mlb_card&series_id=${series.id}&page=${page}`;
-          const{data}=await fetchWithFallback(url);
-          if(!data) throw new Error("Listings API: all methods failed");
-          totalPages=data.total_pages||1;
-          (data.listings||[]).forEach(l=>{ const uuid=l.item?.uuid||""; const sp=l.best_sell_price==="-"?0:Number(l.best_sell_price||0); const bp=l.best_buy_price==="-"?0:Number(l.best_buy_price||0);
-            if(uuid&&uuidMap[uuid]!==undefined){ result[series.id][uuidMap[uuid]].sellPrice=sp; result[series.id][uuidMap[uuid]].buyPrice=bp; result[series.id][uuidMap[uuid]].isSellable=true; }
-            else if(uuid&&uuidMap[uuid]===undefined){ result[series.id].push({uuid,name:l.listing_name,position:l.item?.display_position||"",team:l.item?.team||"",rarity:l.item?.rarity||"",sellPrice:sp,buyPrice:bp,isSellable:true,seriesId:series.id}); }
-          });
-          page++; await new Promise(r=>setTimeout(r,100));
-        }
-      }catch(e){ errors.push({series:series.name,phase:2,error:`Prices unavailable: ${e.message}`}); setFetchErrors([...errors]); }
-      setAllCards(prev=>({...prev,[series.id]:[...result[series.id]]}));
-    }
-    setLoadState(errors.filter(e=>e.phase===1).length===SERIES_LIST.length?"error":"done");
-    setFetchErrors(errors);
-  },[]);
-
-  // On mount: cache first, live fallback
+  // On mount: load from shared Netlify Blob cache
   useEffect(()=>{
-    (async()=>{ const hit=await loadFromCache(); if(!hit) fetchAllLive(); })();
+    loadFromCache();
   },[]);
 
   // ── Manual refresh buttons ────────────────────────────────────────────────
@@ -1102,14 +1067,21 @@ function App() {
           : cache.listingsRefreshing;
 
         if (type === "items") {
-          if (cache.itemsPhase)    setItemsPhase(cache.itemsPhase);
-          if (cache.cancelPending) setCancelPending(true);
-          // Detect if the function stopped due to cancellation
+          if (cache.itemsPhase)           setItemsPhase(cache.itemsPhase);
+          if (cache.itemsPctComplete !== null) setItemsPct(cache.itemsPctComplete);
+          if (cache.cancelPending)        setCancelPending(true);
+          // Progressive update: reload card data after every poll during refresh
+          if (cache.itemsRefreshing && cache.items?.cabData) {
+            mergeAndSet(cache);
+            setLoadState("done");
+          }
+          // Detect cancellation
           if (cache.itemsCancelled && !cache.itemsRefreshing) {
             clearInterval(pollIntervalRef.current[type]);
             setRefreshingItems(false);
             setCancelPending(false);
             setItemsPhase(null);
+            setItemsPct(null);
             setRefreshMsg({ text:"🛑 Refresh stopped. Progress saved — click Refresh Cards to resume.", type:"warn" });
             await loadFromCache();
             return;
@@ -1126,8 +1098,9 @@ function App() {
           if (type === "items") {
             setRefreshingItems(false);
             setItemsPhase(null);
+            setItemsPct(100);
             setItemsTs(newTs);
-            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCards||0} cards across ${cache.items?.totalUUIDs||0} total scanned`, type:"ok" });
+            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCabreraCards||0} Cabrera cards + ${cache.items?.totalOtherCards||0} other cards across ${cache.items?.totalPages||0} pages`, type:"ok" });
           } else {
             setRefreshingListings(false);
             setListingsTs(newTs);
@@ -1311,19 +1284,15 @@ function App() {
   const totalCollected=Object.values(collected).filter(Boolean).length;
 
   const statusInfo=(()=>{
-    if(loadState==="idle") return{dot:"dot-warn",text:"Not loaded"};
-    if(loadState==="loading"){
-      const phase=loadProgress.phase||"";
-      return{dot:"dot-spin",text:`${phase} ${loadProgress.series} (${loadProgress.current}/${loadProgress.total})`};
-    }
+    if(loadState==="idle") return{dot:"dot-warn",text:"No card data — click Refresh Cards to load"};
+    if(loadState==="loading") return{dot:"dot-spin",text:"Loading from server cache…"};
     if(loadState==="error") return{dot:"dot-err",text:"Failed — see troubleshoot"};
-    const tot=Object.values(allCards).reduce((a,c)=>a+c.length,0);
+    const totCab=Object.values(allCards).reduce((a,c)=>a+c.length,0);
+    const totOther=Object.values(otherCards).reduce((a,c)=>a+c.length,0);
     const m=fetchMethod?` · ${fetchMethod}`:"";
-    const p1e=fetchErrors.filter(e=>e.phase===1).length;
-    const p2e=fetchErrors.filter(e=>e.phase===2).length;
-    if(p1e>0) return{dot:"dot-warn",text:`${tot} cards${m} · ${p1e} series failed`};
-    if(p2e>0) return{dot:"dot-warn",text:`${tot} cards${m} · prices missing for ${p2e} series`};
-    return{dot:"dot-ok",text:`${tot} cards across ${SERIES_LIST.length} series${m}`};
+    const incomplete=manifestInfo&&!manifestInfo.complete;
+    if(incomplete) return{dot:"dot-warn",text:`${totCab} Cabrera + ${totOther} other cards${m} · ⚠ incomplete (${manifestInfo.completedPages}/${manifestInfo.expectedPages} pages)`};
+    return{dot:"dot-ok",text:`${totCab} Cabrera + ${totOther} other cards${m}`};
   })();
 
   // ── Timestamp display helpers ─────────────────────────────────────────────
@@ -1393,7 +1362,7 @@ function App() {
       <div className="refresh-panel">
         {/* Items refresh */}
         <div className="refresh-block">
-          <div className="refresh-block-label">Card Database (Items + Item API)</div>
+          <div className="refresh-block-label">Card Database (Items API)</div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             {refreshingItems && <span className="sdot dot-spin" style={{flexShrink:0}}/>}
             <div className={`refresh-ts ${refreshingItems?"ok":tsClass(itemsTs)}`}>
@@ -1404,9 +1373,25 @@ function App() {
                   : itemsTs ? `Updated: ${fmtTs(itemsTs)}` : "No data yet"}
             </div>
           </div>
+          {/* Progress bar — shown during refresh */}
+          {refreshingItems && itemsPct !== null && (
+            <div style={{marginTop:5}}>
+              <div style={{height:4,background:"var(--border)",borderRadius:2,overflow:"hidden",width:"100%"}}>
+                <div style={{height:"100%",background:"var(--accent)",borderRadius:2,
+                  width:`${itemsPct}%`,transition:"width .5s ease"}}/>
+              </div>
+              <div style={{fontSize:9,color:"var(--dim)",marginTop:2}}>{itemsPct}% complete</div>
+            </div>
+          )}
+          {/* Integrity warning */}
+          {manifestInfo && !manifestInfo.complete && !refreshingItems && (
+            <div style={{fontSize:10,color:"var(--red)",marginTop:3}}>
+              ⚠ Incomplete: {manifestInfo.completedPages}/{manifestInfo.expectedPages} pages loaded
+            </div>
+          )}
           <div style={{marginTop:4,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             <button className="refresh-btn" onClick={handleRefreshItems} disabled={refreshingItems}
-              title={refreshingItems?"Refresh already in progress":"Fetch full card database from TheShow.com"}>
+              title={refreshingItems?"Refresh already in progress":"Fetch latest card database from TheShow.com"}>
               {refreshingItems ? <><span className="spin-sm"/> In progress…</> : "🔄 Refresh Cards"}
             </button>
             {refreshingItems && (
@@ -1460,33 +1445,19 @@ function App() {
         )}
       </div>
 
-      {/* Loading bar */}
+      {/* Loading indicator */}
       {loadState==="loading"&&(
         <div style={{background:"var(--surface2)",padding:"10px 14px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:10}}>
           <span className="spin-sm"/>
-          <div style={{flex:1}}>
-            <div style={{fontSize:11,color:"var(--accent)",marginBottom:3}}>
-              {loadProgress.phase&&<span style={{color:"var(--dim)",marginRight:6}}>[{loadProgress.phase}]</span>}
-              <strong>{loadProgress.series}</strong>
-              {loadProgress.total>1&&<span style={{color:"var(--dim)",marginLeft:6}}>({loadProgress.current}/{loadProgress.total})</span>}
-              {fetchMethod&&<span style={{color:"var(--dim)",marginLeft:6}}>via {fetchMethod}</span>}
-            </div>
-            <div style={{height:3,background:"var(--border)",borderRadius:2,overflow:"hidden"}}>
-              <div style={{height:"100%",background:"var(--accent)",borderRadius:2,
-                width:`${loadProgress.total>0?(loadProgress.current/loadProgress.total)*100:0}%`,transition:"width .3s ease"}}/>
-            </div>
-          </div>
+          <span style={{fontSize:11,color:"var(--accent)"}}>Loading card data from server cache…</span>
         </div>
       )}
 
-      {/* Error alert */}
-      {fetchErrors.length>0&&loadState!=="loading"&&(
+      {/* Integrity warning banner */}
+      {manifestInfo && !manifestInfo.complete && loadState==="done" && (
         <div className="alert alert-warn" style={{margin:"10px 14px"}}>
-          {fetchErrors.filter(e=>e.phase===1).length>0
-            ?`⚠️ ${fetchErrors.filter(e=>e.phase===1).length} series failed to load cards.`
-            :`⚠️ Prices unavailable for ${fetchErrors.filter(e=>e.phase===2).length} series (cards still shown).`}
-          <button onClick={()=>{ setShowModal(true); if(diagResults.length===0) runDiag(); }}
-            style={{marginLeft:8,background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:12,textDecoration:"underline",fontFamily:"inherit"}}>Troubleshoot</button>
+          ⚠️ Card data may be incomplete — {manifestInfo.completedPages} of {manifestInfo.expectedPages} pages loaded.
+          Click <strong>🔄 Refresh Cards</strong> to complete the load.
         </div>
       )}
 
@@ -1494,8 +1465,8 @@ function App() {
       {(loadState==="idle"||loadState==="error")&&activeTab!=="csv"&&(
         <div style={{textAlign:"center",padding:"40px 16px",color:"var(--dim)"}}>
           {loadState==="idle"
-            ?(<><div style={{fontSize:32,marginBottom:8}}>⚾</div><div style={{fontSize:13,color:"var(--accent)"}}>Loading…</div></>)
-            :(<><div style={{fontSize:32,marginBottom:8}}>🚫</div><div style={{fontSize:13,color:"var(--red)",marginBottom:4}}>Could not load card data</div><div style={{fontSize:12,marginBottom:14}}>Try refreshing cards above, or use the Troubleshoot link.</div></>)
+            ?(<><div style={{fontSize:32,marginBottom:8}}>⚾</div><div style={{fontSize:13,color:"var(--accent)",marginBottom:4}}>No card data loaded yet</div><div style={{fontSize:12}}>Click <strong>🔄 Refresh Cards</strong> in the panel above to load the card database.</div></>)
+            :(<><div style={{fontSize:32,marginBottom:8}}>🚫</div><div style={{fontSize:13,color:"var(--red)",marginBottom:4}}>Could not load card data</div><div style={{fontSize:12,marginBottom:14}}>Check the troubleshoot link or click Refresh Cards to try again.</div></>)
           }
         </div>
       )}
@@ -1578,11 +1549,10 @@ function App() {
       {/* ── Cards Tab ── */}
       {loadState==="done"&&activeTab==="cards"&&(
         <CardsTab
-          allCards={allCards} collected={collected} saveCollected={saveCollected}
+          allCards={allCards} otherCards={otherCards} collected={collected} saveCollected={saveCollected}
           activeSeries={activeSeries} setActiveSeries={setActiveSeries}
           searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           seriesStats={seriesStats}
-          onItemRefreshed={card=>{ loadFromCache(); }}
           onDataChanged={loadFromCache}
         />
       )}
@@ -1594,7 +1564,7 @@ function App() {
 
       {/* ── CSV Tab ── */}
       {activeTab==="csv"&&(
-        <CSVTab allCards={allCards} collected={collected} onImport={handleImport} loadState={loadState}/>
+        <CSVTab allCards={allCards} otherCards={otherCards} collected={collected} onImport={handleImport} loadState={loadState} onItemsImported={loadFromCache}/>
       )}
 
       {/* Status bar */}
@@ -1613,19 +1583,23 @@ function App() {
 }
 
 // ── CardsTab Component ────────────────────────────────────────────────────────
-function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveSeries, searchQuery, setSearchQuery, seriesStats, onDataChanged }) {
+function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSeries, setActiveSeries, searchQuery, setSearchQuery, seriesStats, onDataChanged }) {
   const [confirmDelete,    setConfirmDelete]    = useState(null); // {type:"card"|"collection", card?, series}
   const [confirmListings,  setConfirmListings]  = useState(null); // series name
   const [actionMsg,        setActionMsg]        = useState(null); // {text,type}
   const [refreshingCard,   setRefreshingCard]   = useState(null); // uuid being refreshed
   const [refreshingSeries, setRefreshingSeries] = useState(false);
 
-  const activeData = seriesStats.find(s=>s.id===activeSeries);
+  const isOtherSeries  = activeSeries?.startsWith("other:");
+  const otherSeriesName = isOtherSeries ? activeSeries.slice(6) : null;
+  const activeData = isOtherSeries
+    ? { name:otherSeriesName, cards:otherCards[otherSeriesName]||[], required:0, collectedCount:0, needed:0, totalCards:(otherCards[otherSeriesName]||[]).length, lowCost:0, highCost:0, complete:false, countMismatch:false, id:activeSeries }
+    : seriesStats.find(s=>s.id===activeSeries);
 
   const filteredCards = useMemo(()=>{
     if(!activeData) return[];
     const q=searchQuery.toLowerCase();
-    return activeData.cards.filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||c.team.toLowerCase().includes(q));
+    return (activeData.cards||[]).filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||(c.team||"").toLowerCase().includes(q));
   },[activeData,searchQuery]);
 
   const showMsg = (text,type="ok") => {
@@ -1727,7 +1701,10 @@ function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveS
         </div>
       )}
 
-      {/* Series pills */}
+      {/* Cabrera series pills */}
+      <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:"var(--accent)",marginBottom:6}}>
+        Cabrera Collections
+      </div>
       <div className="pill-row">
         {SERIES_LIST.map(s=>(
           <button key={s.id} className={`pill ${activeSeries===s.id?"active":""}`}
@@ -1736,6 +1713,25 @@ function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveS
           </button>
         ))}
       </div>
+
+      {/* Other series pills */}
+      {Object.keys(otherCards).length > 0 && (
+        <>
+          <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:"var(--dim)",margin:"10px 0 6px"}}>
+            Other Series (not part of Cabrera collection)
+          </div>
+          <div className="pill-row" style={{marginBottom:12}}>
+            {Object.keys(otherCards).sort().map(seriesName=>(
+              <button key={seriesName}
+                className={`pill ${activeSeries===`other:${seriesName}`?"active":""}`}
+                onClick={()=>{setActiveSeries(`other:${seriesName}`);setSearchQuery("");setConfirmDelete(null);setConfirmListings(null);}}>
+                {seriesName}
+                <span style={{fontSize:9,marginLeft:4,opacity:.7}}>({otherCards[seriesName]?.length||0})</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {activeSeries&&activeData?(
         <div>
@@ -1747,19 +1743,26 @@ function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveS
             </div>
           </div>
 
-          {/* Collection-level actions */}
-          <div className="collection-actions">
-            <span className="ca-label">Collection:</span>
-            <button className="refresh-btn" style={{color:"var(--blue)",borderColor:"#1e3a8a",fontSize:11}}
-              disabled={refreshingSeries}
-              onClick={()=>{setConfirmDelete(null);setConfirmListings(seriesName);}}>
-              {refreshingSeries?<><span className="spin-sm"/> Refreshing…</>:"💰 Refresh Prices"}
-            </button>
-            <button className="card-action-btn danger"
-              onClick={()=>{setConfirmListings(null);setConfirmDelete({type:"collection"});}}>
-              🗑 Clear All Cards
-            </button>
-          </div>
+          {/* Collection-level actions — Cabrera series only */}
+          {!isOtherSeries && (
+            <div className="collection-actions">
+              <span className="ca-label">Collection:</span>
+              <button className="refresh-btn" style={{color:"var(--blue)",borderColor:"#1e3a8a",fontSize:11}}
+                disabled={refreshingSeries}
+                onClick={()=>{setConfirmDelete(null);setConfirmListings(seriesName);}}>
+                {refreshingSeries?<><span className="spin-sm"/> Refreshing…</>:"💰 Refresh Prices"}
+              </button>
+              <button className="card-action-btn danger"
+                onClick={()=>{setConfirmListings(null);setConfirmDelete({type:"collection"});}}>
+                🗑 Clear All Cards
+              </button>
+            </div>
+          )}
+          {isOtherSeries && (
+            <div style={{fontSize:11,color:"var(--dim)",marginBottom:8,padding:"6px 10px",background:"var(--surface2)",borderRadius:6}}>
+              ℹ This series is not part of the Cabrera collection. Cards are shown for reference only.
+            </div>
+          )}
 
           <input className="search-input" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search name, position, team…"/>
 
@@ -1827,11 +1830,13 @@ function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveS
             </table>
           </div>
 
-          <div className="cost-chips">
-            <div className="chip"><span style={{color:"var(--dim)"}}>Low to finish: </span><span style={{fontWeight:"bold",color:"var(--green)"}}>{activeData.lowCost.toLocaleString()} stubs</span></div>
-            <div className="chip"><span style={{color:"var(--dim)"}}>High to finish: </span><span style={{fontWeight:"bold",color:"var(--red)"}}>{activeData.highCost.toLocaleString()} stubs</span></div>
-            <div className="chip"><span style={{color:"var(--dim)"}}>In database: </span><span style={{fontWeight:"bold",color:activeData.countMismatch?"var(--accent)":"var(--text)"}}>{activeData.totalCards} / {activeData.required} required</span></div>
-          </div>
+          {!isOtherSeries && (
+            <div className="cost-chips">
+              <div className="chip"><span style={{color:"var(--dim)"}}>Low to finish: </span><span style={{fontWeight:"bold",color:"var(--green)"}}>{activeData.lowCost.toLocaleString()} stubs</span></div>
+              <div className="chip"><span style={{color:"var(--dim)"}}>High to finish: </span><span style={{fontWeight:"bold",color:"var(--red)"}}>{activeData.highCost.toLocaleString()} stubs</span></div>
+              <div className="chip"><span style={{color:"var(--dim)"}}>In database: </span><span style={{fontWeight:"bold",color:activeData.countMismatch?"var(--accent)":"var(--text)"}}>{activeData.totalCards} / {activeData.required} required</span></div>
+            </div>
+          )}
         </div>
       ):(
         <div className="empty">👆 Select a collection above to browse its cards</div>

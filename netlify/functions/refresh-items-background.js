@@ -1,189 +1,191 @@
 // netlify/functions/refresh-items-background.js
-// Weekly scheduled: Sunday 2 AM Pacific (10:00 UTC PDT / 09:00 UTC PST).
-// Incremental add-only, chunked with checkpoint resume.
-// Checks items-cancel blob before every batch — stops cleanly if flagged.
+//
+// Weekly scheduled: Sunday 2 AM Pacific (10:00 UTC PDT).
+//
+// Single-phase, page-by-page. Items API already includes series + locations.
+// Each page is fetched, merged into the live blob immediately (progressive),
+// checkpoint saved, then moves to next page.
+//
+// Resume: reads checkpoint.lastCompletedPage and starts from next page.
+// Cancel: checked before each page. Checkpoint rolled back one page by cancel-refresh.js.
+// Integrity: items-manifest tracks expectedPages vs completedPages.
 
 import { getStore } from "@netlify/blobs";
-import { BASE, SERIES_NAME_TO_ID, REQUIRED_COUNTS, fetchItemDetail, itemToCard } from "./_shared.js";
+import {
+  BASE, CABRERA_SERIES, REQUIRED_COUNTS,
+  itemToCard, fetchSeriesMeta,
+} from "./_shared.js";
 
-const BATCH_SIZE = 10, BATCH_DELAY = 150, PAGE_DELAY = 100;
+const PAGE_DELAY = 150; // ms between pages
 
-// Sentinel error thrown when cancel flag is detected
 class CancelledError extends Error {
-  constructor() { super("Refresh cancelled by user"); this.cancelled = true; }
-}
-
-async function setStatus(store, phase, extra = {}) {
-  await store.setJSON("items-status", {
-    status: "refreshing", phase,
-    updatedAt: new Date().toISOString(),
-    ...extra,
-  });
+  constructor() { super("Cancelled by user"); this.cancelled = true; }
 }
 
 async function checkCancel(store) {
   const flag = await store.get("items-cancel", { type:"json" }).catch(() => null);
   if (flag?.cancelled) {
-    // Clear the flag so the next run starts clean
     await store.delete("items-cancel").catch(() => {});
     throw new CancelledError();
   }
 }
 
-// Phase 1: harvest all UUIDs page by page, saving checkpoint after each page
-async function harvestUUIDs(store, startPage, priorUUIDs) {
-  const uuids = [...priorUUIDs];
-  const seen = new Set(uuids);
-  let page = startPage, totalPages = 999;
-
-  while (page <= totalPages) {
-    await checkCancel(store); // check before each page
-    await setStatus(store, `Phase 1 of 2: building UUID list, page ${page} of ${totalPages === 999 ? "?" : totalPages}…`);
-
-    const res = await fetch(`${BASE}/apis/items.json?type=mlb_card&page=${page}`, {
-      headers: { "User-Agent": "collect-miggy-netlify/1.0" },
-    });
-    if (!res.ok) throw new Error(`Items API HTTP ${res.status} page=${page}`);
-    const data = await res.json();
-    totalPages = data.total_pages || 1;
-
-    for (const item of data.items || []) {
-      if (item.uuid && !seen.has(item.uuid)) { seen.add(item.uuid); uuids.push(item.uuid); }
-    }
-
-    // Save checkpoint after each page
-    await store.setJSON("items-checkpoint", {
-      phase: 1, lastCompletedPage: page, totalPages, uuids, processedUUIDs: [],
-    });
-
-    page++;
-    if (page <= totalPages) await new Promise(r => setTimeout(r, PAGE_DELAY));
-  }
-  return uuids;
+async function setStatus(store, pctComplete, phase, extra = {}) {
+  await store.setJSON("items-status", {
+    status: "refreshing", pctComplete, phase,
+    updatedAt: new Date().toISOString(), ...extra,
+  });
 }
 
-// Phase 2: fetch Item API for new UUIDs (skip existing), cancel-aware
-async function enrichNewUUIDs(store, allUUIDs, existingSet, processedSoFar) {
-  const processedSet = new Set(processedSoFar);
-  const toFetch = allUUIDs.filter(u => !existingSet.has(u) && !processedSet.has(u));
-  const newItems = [];
-  const total = toFetch.length;
+// Process one item into the correct bucket (no API call needed)
+function processItem(item, cabData, otherData, seenUUIDs) {
+  if (!item?.uuid || seenUUIDs.has(item.uuid)) return;
+  seenUUIDs.add(item.uuid);
 
-  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
-    await checkCancel(store); // check before each batch — exits cleanly via CancelledError
+  const card       = itemToCard(item);
+  const seriesName = item.series || "Unknown";
+  const seriesId   = CABRERA_SERIES[seriesName]; // undefined if not a Cabrera series
 
-    const batch = toFetch.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(batch.map(uuid => fetchItemDetail(uuid)));
-    for (const r of results) { if (r.status === "fulfilled") newItems.push(r.value); }
-    batch.forEach(u => processedSet.add(u));
-
-    const done = i + batch.length;
-    await setStatus(store, `Phase 2 of 2: fetching card details, ${done}/${total} new cards…`);
-
-    // Save checkpoint after each batch (cancel-rollback happens in cancel-refresh.js)
-    await store.setJSON("items-checkpoint", {
-      phase: 2, uuids: allUUIDs,
-      processedUUIDs: [...processedSet],
-      updatedAt: new Date().toISOString(),
-    });
-
-    if (i + BATCH_SIZE < toFetch.length) await new Promise(r => setTimeout(r, BATCH_DELAY));
+  if (seriesId && cabData[seriesId]) {
+    cabData[seriesId].cards.push(card);
+  } else {
+    if (!otherData[seriesName]) otherData[seriesName] = { cards:[] };
+    otherData[seriesName].cards.push(card);
   }
-  return newItems;
 }
 
-// Merge new items into the existing items blob (add-only, no duplicates)
-function mergeIntoBlob(existing, newItems) {
-  const data = {};
-  for (const id of Object.values(SERIES_NAME_TO_ID)) {
-    data[id] = { cards:[], totalInCollection:REQUIRED_COUNTS[id]||0, totalInDatabase:0 };
-  }
-  const uuidToSeries = {};
+// Write the live items blob after each page
+async function writeBlob(store, cabData, otherData, seriesMeta, pagesLoaded, totalPages) {
+  for (const sd of Object.values(cabData))  sd.totalInDatabase = sd.cards.length;
+  for (const sd of Object.values(otherData)) sd.totalInDatabase = sd.cards.length;
 
-  if (existing?.data) {
-    for (const [sid, sd] of Object.entries(existing.data)) {
-      if (!data[sid]) continue;
-      for (const card of sd.cards || []) {
-        if (!uuidToSeries[card.uuid]) {
-          data[sid].cards.push(card);
-          uuidToSeries[card.uuid] = sid;
+  const totalCab   = Object.values(cabData).reduce((a,s) => a+s.cards.length, 0);
+  const totalOther = Object.values(otherData).reduce((a,s) => a+s.cards.length, 0);
+
+  await store.setJSON("items", {
+    updatedAt:         new Date().toISOString(),
+    pagesLoaded,
+    totalPages,
+    complete:          pagesLoaded >= totalPages,
+    totalCards:        totalCab + totalOther,
+    totalCabreraCards: totalCab,
+    totalOtherCards:   totalOther,
+    seriesMeta,        // full series list from meta API for frontend display
+    cabData,           // { [series_id]: { cards[], totalInCollection, totalInDatabase } }
+    otherData,         // { [series_name]: { cards[], totalInDatabase } }
+  });
+}
+
+// ── Main refresh logic (shared with HTTP handler) ─────────────────────────────
+export async function runItemsRefresh(store) {
+  await store.delete("items-cancel").catch(() => {});
+
+  // Fetch series meta (non-fatal if unavailable)
+  await setStatus(store, 0, "Fetching series metadata…");
+  let seriesMeta = [];
+  try { seriesMeta = await fetchSeriesMeta(); }
+  catch(e) { console.warn("Meta API failed:", e.message); }
+
+  // Check for resume checkpoint
+  const checkpoint  = await store.get("items-checkpoint", { type:"json" }).catch(() => null);
+  const isResume    = !!(checkpoint?.lastCompletedPage);
+  const startPage   = isResume ? checkpoint.lastCompletedPage + 1 : 1;
+
+  // Initialize data buckets
+  const cabData = {};
+  for (const id of Object.values(CABRERA_SERIES)) {
+    cabData[id] = { cards:[], totalInCollection:REQUIRED_COUNTS[id]||0, totalInDatabase:0 };
+  }
+  const otherData = {};
+  const seenUUIDs = new Set();
+
+  // If resuming, reload existing blob data so we don't lose prior pages
+  if (isResume) {
+    const existing = await store.get("items", { type:"json" }).catch(() => null);
+    if (existing?.cabData) {
+      for (const [id, sd] of Object.entries(existing.cabData)) {
+        if (cabData[id]) {
+          cabData[id].cards = sd.cards || [];
+          for (const c of cabData[id].cards) seenUUIDs.add(c.uuid);
         }
+      }
+    }
+    if (existing?.otherData) {
+      for (const [name, sd] of Object.entries(existing.otherData)) {
+        otherData[name] = { cards: sd.cards || [] };
+        for (const c of otherData[name].cards) seenUUIDs.add(c.uuid);
       }
     }
   }
 
-  for (const item of newItems) {
-    if (!item?.uuid || uuidToSeries[item.uuid]) continue;
-    const sid = SERIES_NAME_TO_ID[item.series];
-    if (!sid || !data[sid]) continue;
-    const card = itemToCard(item);
-    data[sid].cards.push(card);
-    uuidToSeries[card.uuid] = sid;
+  // Discover total pages — always fetch page 1 metadata
+  // (even when resuming, in case total_pages changed)
+  let totalPages = checkpoint?.totalPages || 0;
+  if (!totalPages || startPage === 1) {
+    await checkCancel(store);
+    const r = await fetch(`${BASE}/apis/items.json?type=mlb_card&page=1`, {
+      headers: { "User-Agent": "collect-miggy-netlify/1.0" },
+    });
+    if (!r.ok) throw new Error(`Items API HTTP ${r.status} page=1`);
+    const d = await r.json();
+    totalPages = d.total_pages || 1;
+
+    // Process page 1 if this is a fresh start
+    if (!isResume) {
+      for (const item of d.items||[]) processItem(item, cabData, otherData, seenUUIDs);
+      await writeBlob(store, cabData, otherData, seriesMeta, 1, totalPages);
+      await store.setJSON("items-checkpoint", { lastCompletedPage:1, totalPages });
+      await store.setJSON("items-manifest", { expectedPages:totalPages, completedPages:1, complete:false, startedAt:new Date().toISOString() });
+      await setStatus(store, Math.round((1/totalPages)*100), `Page 1 of ${totalPages} (${Math.round((1/totalPages)*100)}%)…`);
+    }
   }
 
-  for (const sid of Object.keys(data)) data[sid].totalInDatabase = data[sid].cards.length;
+  // Fetch remaining pages
+  for (let page = Math.max(startPage, 2); page <= totalPages; page++) {
+    await checkCancel(store);
 
-  return {
-    updatedAt: new Date().toISOString(),
-    totalCards: Object.values(data).reduce((a,s) => a+s.cards.length, 0),
-    totalUUIDs: Object.keys(uuidToSeries).length,
-    data,
-  };
-}
+    const r = await fetch(`${BASE}/apis/items.json?type=mlb_card&page=${page}`, {
+      headers: { "User-Agent": "collect-miggy-netlify/1.0" },
+    });
+    if (!r.ok) throw new Error(`Items API HTTP ${r.status} page=${page}`);
+    const d = await r.json();
 
-export async function runItemsRefresh(store) {
-  // Clear any stale cancel flag from a previous run
-  await store.delete("items-cancel").catch(() => {});
+    for (const item of d.items||[]) processItem(item, cabData, otherData, seenUUIDs);
 
-  const existing = await store.get("items", { type:"json" }).catch(() => null);
-  const existingSet = new Set();
-  if (existing?.data) {
-    for (const sd of Object.values(existing.data))
-      for (const c of sd.cards||[]) if (c.uuid) existingSet.add(c.uuid);
+    const pct = Math.round((page / totalPages) * 100);
+    await writeBlob(store, cabData, otherData, seriesMeta, page, totalPages);
+    await store.setJSON("items-checkpoint", { lastCompletedPage:page, totalPages });
+    await store.setJSON("items-manifest", { expectedPages:totalPages, completedPages:page, complete:false });
+    await setStatus(store, pct, `Loading cards: page ${page} of ${totalPages} (${pct}%)…`);
+
+    if (page < totalPages) await new Promise(r => setTimeout(r, PAGE_DELAY));
   }
 
-  const checkpoint = await store.get("items-checkpoint", { type:"json" }).catch(() => null);
-  let allUUIDs, processedSoFar = [];
+  // All pages done — finalize
+  const totalCab   = Object.values(cabData).reduce((a,s)  => a+s.cards.length, 0);
+  const totalOther = Object.values(otherData).reduce((a,s) => a+s.cards.length, 0);
 
-  if (checkpoint?.phase === 1) {
-    await setStatus(store, `Resuming UUID harvest from page ${checkpoint.lastCompletedPage+1}…`);
-    allUUIDs = await harvestUUIDs(store, checkpoint.lastCompletedPage+1, checkpoint.uuids||[]);
-  } else if (checkpoint?.phase === 2) {
-    allUUIDs = checkpoint.uuids || [];
-    processedSoFar = checkpoint.processedUUIDs || [];
-    const remaining = allUUIDs.filter(u => !existingSet.has(u) && !new Set(processedSoFar).has(u)).length;
-    await setStatus(store, `Resuming card details: ${remaining} remaining…`);
-  } else {
-    allUUIDs = await harvestUUIDs(store, 1, []);
-  }
-
-  const newItems = await enrichNewUUIDs(store, allUUIDs, existingSet, processedSoFar);
-
-  // Merge whatever was fetched (even partial on cancel — though cancel throws before here)
-  const payload = mergeIntoBlob(existing, newItems);
-  await store.setJSON("items", payload);
+  await store.setJSON("items-manifest", {
+    expectedPages:totalPages, completedPages:totalPages, complete:true,
+    completedAt:new Date().toISOString(),
+    totalCabreraCards:totalCab, totalOtherCards:totalOther,
+  });
   await store.delete("items-checkpoint").catch(() => {});
   await store.setJSON("items-status", {
-    status: "done",
-    completedAt: payload.updatedAt,
-    totalCards: payload.totalCards,
-    newCardsAdded: newItems.filter(i => SERIES_NAME_TO_ID[i?.series]).length,
+    status:"done", pctComplete:100,
+    completedAt:new Date().toISOString(),
+    totalCabreraCards:totalCab, totalOtherCards:totalOther, totalPages,
   });
 }
 
+// ── Scheduled handler ─────────────────────────────────────────────────────────
 export default async function handler(req, context) {
   const store = getStore({ name:"card-cache", consistency:"strong" });
-  try {
-    await runItemsRefresh(store);
-  } catch(e) {
-    if (e.cancelled) {
-      // Status was already set by checkCancel — just ensure checkpoint is preserved
-      return;
-    }
-    await store.setJSON("items-status", {
-      status: "error", error: e.message, failedAt: new Date().toISOString(),
-    });
+  try { await runItemsRefresh(store); }
+  catch(e) {
+    if (e.cancelled) return;
+    await store.setJSON("items-status", { status:"error", error:e.message, failedAt:new Date().toISOString() });
   }
 }
 
-export const config = { schedule: "0 10 * * 0" };
+export const config = { schedule:"0 10 * * 0" };
