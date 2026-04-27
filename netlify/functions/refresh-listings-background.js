@@ -1,60 +1,32 @@
 // netlify/functions/refresh-listings-background.js
-//
-// Background function — runs asynchronously with a 15-minute timeout.
-// Returns 202 immediately; client polls /api/get-cache to detect completion.
-//
-// Triggered by:
-//   - Scheduled cron: every hour on the hour (0 * * * *)
-//   - Manual POST from the frontend refresh button
+// Scheduled: 6 AM Pacific (14:00 UTC PDT) and 8 PM Pacific (04:00 UTC next day PDT).
+// Fetches market buy/sell prices for all 22 series from Listings API.
+// HTTP equivalent: refresh-listings-http.js
 
 import { getStore } from "@netlify/blobs";
+import { BASE, SERIES_NAME_TO_ID } from "./_shared.js";
 
-const BASE = "https://mlb26.theshow.com";
+const SERIES_LIST = Object.entries(SERIES_NAME_TO_ID).map(([name, id]) => ({ id, name }));
 
-const SERIES_LIST = [
-  { id: "10028", name: "World Baseball Classic", required: 142 },
-  { id: "10004", name: "All-Star",               required: 39  },
-  { id: "10046", name: "Jolt",                   required: 30  },
-  { id: "10035", name: "The Negro Leagues",       required: 27  },
-  { id: "10017", name: "Topps Now",              required: 24  },
-  { id: "10050", name: "New Threads",            required: 23  },
-  { id: "10044", name: "Contributor",            required: 18  },
-  { id: "10005", name: "Awards",                 required: 18  },
-  { id: "10002", name: "Breakout",               required: 17  },
-  { id: "10039", name: "Spring Breakout",        required: 16  },
-  { id: "10020", name: "2nd Half Heroes",        required: 15  },
-  { id: "10043", name: "Egg Hunt",               required: 15  },
-  { id: "10047", name: "Spotlight",              required: 12  },
-  { id: "10003", name: "Veteran",                required: 11  },
-  { id: "10006", name: "Postseason",             required: 9   },
-  { id: "10062", name: "St. Patrick's Day",      required: 8   },
-  { id: "10001", name: "Rookie",                 required: 6   },
-  { id: "10068", name: "Mexico City Series",     required: 4   },
-  { id: "10034", name: "Standout",               required: 3   },
-  { id: "10049", name: "Cornerstone",            required: 2   },
-  { id: "10022", name: "Milestone",              required: 2   },
-  { id: "10045", name: "Last Ride",              required: 1   },
-];
-
-async function fetchSeriesPages(seriesId) {
-  // Returns { uuid: { sellPrice, buyPrice } } for all market listings in a series
+async function fetchSeriesPrices(seriesId) {
   const prices = {};
-  let page = 1;
-  let totalPages = 1;
+  let page = 1, totalPages = 1;
   while (page <= totalPages) {
-    const url = `${BASE}/apis/listings.json?type=mlb_card&series_id=${seriesId}&page=${page}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "collect-miggy-netlify/1.0" },
-    });
+    const res = await fetch(
+      `${BASE}/apis/listings.json?type=mlb_card&series_id=${seriesId}&page=${page}`,
+      { headers: { "User-Agent": "collect-miggy-netlify/1.0" } }
+    );
     if (!res.ok) throw new Error(`Listings API HTTP ${res.status} series=${seriesId} page=${page}`);
     const data = await res.json();
     totalPages = data.total_pages || 1;
     for (const listing of data.listings || []) {
       const uuid = listing.item?.uuid;
       if (!uuid) continue;
-      const sp = listing.best_sell_price === "-" ? 0 : Number(listing.best_sell_price || 0);
-      const bp = listing.best_buy_price  === "-" ? 0 : Number(listing.best_buy_price  || 0);
-      prices[uuid] = { sellPrice: sp, buyPrice: bp };
+      // API: best_sell_price = what sellers ask (cost to buy now)
+      //      best_buy_price  = what buyers offer (revenue if you sell now)
+      const sellNowPrice  = listing.best_sell_price === "-" ? 0 : Number(listing.best_sell_price || 0);
+      const buyNowPrice   = listing.best_buy_price  === "-" ? 0 : Number(listing.best_buy_price  || 0);
+      prices[uuid] = { sellNowPrice, buyNowPrice };
     }
     page++;
     if (page <= totalPages) await new Promise(r => setTimeout(r, 80));
@@ -62,39 +34,42 @@ async function fetchSeriesPages(seriesId) {
   return prices;
 }
 
-export default async function handler(req, context) {
-  const store = getStore({ name: "card-cache", consistency: "strong" });
+export async function runListingsRefresh(store, targetSeriesIds = null) {
+  // targetSeriesIds: null = all series, array of ids = specific series only
+  const series = targetSeriesIds
+    ? SERIES_LIST.filter(s => targetSeriesIds.includes(s.id))
+    : SERIES_LIST;
 
-  // Write in-progress marker
-  await store.setJSON("listings-status", { status: "refreshing", startedAt: new Date().toISOString() });
+  await store.setJSON("listings-status", { status:"refreshing", startedAt:new Date().toISOString() });
 
-  const result = {};
+  // Load existing listings to merge into (preserve series not being refreshed)
+  const existing = await store.get("listings", { type:"json" }).catch(() => null);
+  const result = existing?.data ? { ...existing.data } : {};
   const errors = [];
 
-  for (const series of SERIES_LIST) {
-    try {
-      result[series.id] = await fetchSeriesPages(series.id);
-    } catch (e) {
-      errors.push({ series: series.name, error: e.message });
-      result[series.id] = {};
-    }
+  for (const s of series) {
+    try { result[s.id] = await fetchSeriesPrices(s.id); }
+    catch(e) { errors.push({ series:s.name, error:e.message }); }
   }
 
   const payload = {
     updatedAt:     new Date().toISOString(),
+    totalListings: Object.values(result).reduce((a,p) => a+Object.keys(p).length, 0),
     seriesCount:   SERIES_LIST.length,
-    totalListings: Object.values(result).reduce((a, p) => a + Object.keys(p).length, 0),
     errors,
     data: result,
   };
 
   await store.setJSON("listings", payload);
-  // Clear in-progress marker
-  await store.setJSON("listings-status", { status: "done", completedAt: payload.updatedAt });
+  await store.setJSON("listings-status", { status:"done", completedAt:payload.updatedAt, totalListings:payload.totalListings });
+  return payload;
 }
 
-// Scheduled functions must NOT have a path — Netlify forbids it.
-// Manual HTTP triggers use the separate refresh-listings-http.js function.
-export const config = {
-  schedule: "0 * * * *",
-};
+export default async function handler(req, context) {
+  const store = getStore({ name:"card-cache", consistency:"strong" });
+  try { await runListingsRefresh(store); }
+  catch(e) { await store.setJSON("listings-status", { status:"error", error:e.message, failedAt:new Date().toISOString() }); }
+}
+
+// 6 AM Pacific PDT = 14:00 UTC; 8 PM Pacific PDT = 03:00 UTC next day
+export const config = { schedule:"0 14 * * * | 0 3 * * *" };
