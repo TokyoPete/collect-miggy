@@ -117,6 +117,8 @@
     .prog-pill { font-size:10px;font-weight:bold;color:var(--accent); }
     .prog-done { color:var(--green); }
     .view-btn { padding:3px 9px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);font-size:11px;font-family:inherit;border-radius:4px;cursor:pointer; }
+    th.sortable { cursor:pointer;user-select:none; }
+    th.sortable:hover { color:var(--accent); }
 
     /* ── Card action buttons (delete, refresh per-card) ── */
     .card-action-btn { padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);font-size:10px;font-family:inherit;cursor:pointer;line-height:1.6; }
@@ -213,7 +215,7 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BASE      = "https://mlb26.theshow.com";
 const LS_KEY    = "cabrera_v3";
-const CSV_FILENAME = "cabrera_collection.csv";
+const CSV_FILENAME = "inventory.csv";
 const CSV_HEADERS  = ["uuid", "card_name", "collection"];
 
 const API_GET_CACHE              = "/api/get-cache";
@@ -586,7 +588,7 @@ function ImportConfirmModal({ stats, onConfirm, onCancel }) {
 // ── CSV Tab Component ──────────────────────────────────────────────────────────
 
 // Items CSV helpers
-const ITEMS_CSV_FILENAME = "cabrera_items.csv";
+const ITEMS_CSV_FILENAME = "all_cards.csv";
 const ITEMS_CSV_HEADERS  = ["uuid","name","position","team","rarity","ovr","series","locations","isSellable"];
 const LOCATIONS_SEPARATOR = " | "; // consistent separator for locations array in CSV
 
@@ -1247,23 +1249,28 @@ function App() {
     const cc=cards.filter(c=>collected[c.uuid]).length;
     const needed=Math.max(0,series.required-cc);
 
-    // sellNowPrice = the price you pay to buy a card immediately (what we use for cost estimates)
-    // buyNowPrice  = what you'd get selling the card immediately (not relevant for cost estimates)
-    const marketCards    = cards.filter(c=>c.sellNowPrice>0);
-    const nonMarketCards = cards.filter(c=>!c.sellNowPrice);
+    // sellNowPrice = asking price — what you pay to acquire the card immediately (use for LOW estimate)
+    // buyNowPrice  = bid price   — what buyers are currently offering (use for HIGH estimate)
+    const marketCards    = cards.filter(c=>c.sellNowPrice>0||c.buyNowPrice>0);
+    const nonMarketCards = cards.filter(c=>!c.sellNowPrice&&!c.buyNowPrice);
 
-    const notCollectedMarket = marketCards
-      .filter(c=>!collected[c.uuid])
-      .sort((a,b)=>(a.sellNowPrice||999999999)-(b.sellNowPrice||999999999));
+    const notCollectedMarket = marketCards.filter(c=>!collected[c.uuid]);
 
-    // Low cost = sum of the cheapest (needed) cards' sell-now prices
+    // Low cost = sum of the cheapest (needed) cards by sellNowPrice (what you actually pay)
+    const cheapest = [...notCollectedMarket]
+      .filter(c=>c.sellNowPrice>0)
+      .sort((a,b)=>a.sellNowPrice-b.sellNowPrice)
+      .slice(0,needed);
     let low=0;
-    notCollectedMarket.slice(0,needed).forEach(c=>{low+=c.sellNowPrice||0;});
+    cheapest.forEach(c=>{low+=c.sellNowPrice;});
 
-    // High cost = sum of the most expensive (needed) cards' sell-now prices
-    const expensive=[...notCollectedMarket].sort((a,b)=>(b.sellNowPrice||0)-(a.sellNowPrice||0)).slice(0,needed);
+    // High cost = sum of the most expensive (needed) cards by buyNowPrice (top bids = premium market)
+    const expensive = [...notCollectedMarket]
+      .filter(c=>c.buyNowPrice>0)
+      .sort((a,b)=>b.buyNowPrice-a.buyNowPrice)
+      .slice(0,needed);
     let high=0;
-    expensive.forEach(c=>{high+=c.sellNowPrice||0;});
+    expensive.forEach(c=>{high+=c.buyNowPrice;});
 
     const countMismatch = cards.length>0 && cards.length!==series.required;
 
@@ -1574,9 +1581,9 @@ function App() {
       </div>
       <div className="legend">
         <span><span style={{color:"var(--green)"}}>■</span> Collected</span>
-        <span><span style={{color:"var(--blue)"}}>■</span> Sell Now = market pays you if you sell immediately</span>
-        <span><span style={{color:"var(--accent)"}}>■</span> Buy Now = cost to acquire card immediately</span>
-        <span>Low cost = cheapest buy-now prices · High cost = most expensive buy-now prices · Shared cache from Netlify</span>
+        <span><span style={{color:"var(--accent)"}}>■</span> Sell Now = asking price — cost to acquire immediately</span>
+        <span><span style={{color:"var(--blue)"}}>■</span> Buy Now = current best bid — revenue if you sell now</span>
+        <span>Low cost = cheapest Sell Now prices · High cost = highest Buy Now bids · Shared cache from Netlify</span>
       </div>
     </div>
   );
@@ -1592,15 +1599,45 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
 
   const isOtherSeries  = activeSeries?.startsWith("other:");
   const otherSeriesName = isOtherSeries ? activeSeries.slice(6) : null;
-  const activeData = isOtherSeries
+  const [sortField, setSortField] = useState("ovr");
+  const [sortDir,   setSortDir]   = useState("desc"); // "asc"|"desc"
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDir(d => d==="asc"?"desc":"asc");
+    else { setSortField(field); setSortDir(field==="name"?"asc":"desc"); }
+  };
+
+  // Sort indicator shown in header
+  const sortIcon = (field) => {
+    if (sortField !== field) return <span style={{opacity:.25,fontSize:9,marginLeft:3}}>⇅</span>;
+    return <span style={{fontSize:9,marginLeft:3}}>{sortDir==="asc"?"↑":"↓"}</span>;
+  };
     ? { name:otherSeriesName, cards:otherCards[otherSeriesName]||[], required:0, collectedCount:0, needed:0, totalCards:(otherCards[otherSeriesName]||[]).length, lowCost:0, highCost:0, complete:false, countMismatch:false, id:activeSeries }
     : seriesStats.find(s=>s.id===activeSeries);
 
   const filteredCards = useMemo(()=>{
     if(!activeData) return[];
     const q=searchQuery.toLowerCase();
-    return (activeData.cards||[]).filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||(c.team||"").toLowerCase().includes(q));
-  },[activeData,searchQuery]);
+    let cards=(activeData.cards||[]).filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||(c.team||"").toLowerCase().includes(q));
+
+    // Apply sort
+    cards = [...cards].sort((a,b)=>{
+      let av, bv;
+      switch(sortField){
+        case "ovr":          av=a.ovr||0;            bv=b.ovr||0;            break;
+        case "name":         av=a.name||"";          bv=b.name||"";          break;
+        case "rarity":       av=a.rarity||"";        bv=b.rarity||"";        break;
+        case "position":     av=a.position||"";      bv=b.position||"";      break;
+        case "team":         av=a.team||"";          bv=b.team||"";          break;
+        case "sellNowPrice": av=a.sellNowPrice||0;   bv=b.sellNowPrice||0;   break;
+        case "buyNowPrice":  av=a.buyNowPrice||0;    bv=b.buyNowPrice||0;    break;
+        default:             av=a.ovr||0;            bv=b.ovr||0;
+      }
+      if (typeof av === "string") return sortDir==="asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortDir==="asc" ? av-bv : bv-av;
+    });
+    return cards;
+  },[activeData,searchQuery,sortField,sortDir]);
 
   const showMsg = (text,type="ok") => {
     setActionMsg({text,type});
@@ -1771,18 +1808,19 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
               <thead>
                 <tr>
                   <th>Have</th>
-                  <th className="left">Card Name</th>
-                  <th>Rar</th>
-                  <th>Pos</th>
-                  <th>Team</th>
+                  <th className="left sortable" onClick={()=>handleSort("name")}>Card Name{sortIcon("name")}</th>
+                  <th className="sortable" onClick={()=>handleSort("ovr")} title="Overall Rating">OVR{sortIcon("ovr")}</th>
+                  <th className="sortable" onClick={()=>handleSort("rarity")}>Rar{sortIcon("rarity")}</th>
+                  <th className="sortable" onClick={()=>handleSort("position")}>Pos{sortIcon("position")}</th>
+                  <th className="sortable" onClick={()=>handleSort("team")}>Team{sortIcon("team")}</th>
                   <th className="left">Where to Find</th>
-                  <th title="Cost to buy this card immediately from the market">Buy Now</th>
-                  <th title="What the market will pay you if you sell now">Sell Now</th>
+                  <th className="sortable" onClick={()=>handleSort("sellNowPrice")} title="Asking price — cost to buy this card immediately">Sell Now{sortIcon("sellNowPrice")}</th>
+                  <th className="sortable" onClick={()=>handleSort("buyNowPrice")} title="Current best bid — what you receive if you sell now">Buy Now{sortIcon("buyNowPrice")}</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredCards.length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
+                {filteredCards.length===0&&<tr><td colSpan={10} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
                 {filteredCards.map(card=>(
                   <tr key={card.uuid} className={collected[card.uuid]?"crow":""}>
                     <td className="center">
@@ -1793,6 +1831,7 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
                     <td className="left" style={{fontWeight:collected[card.uuid]?"bold":"normal",color:collected[card.uuid]?"var(--green)":"var(--text)",maxWidth:150,whiteSpace:"normal",lineHeight:1.3}}>
                       {card.name}
                     </td>
+                    <td className="center" style={{fontWeight:"bold",color:"var(--text)"}}>{card.ovr||"—"}</td>
                     <td className="center">
                       <span className="rbadge" style={{background:rarityBg(card.rarity)}}>
                         {card.rarity?card.rarity.charAt(0).toUpperCase():"?"}
