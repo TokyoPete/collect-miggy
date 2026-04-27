@@ -118,21 +118,6 @@
     .prog-done { color:var(--green); }
     .view-btn { padding:3px 9px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);font-size:11px;font-family:inherit;border-radius:4px;cursor:pointer; }
 
-    /* ── Card action buttons (delete, refresh per-card) ── */
-    .card-action-btn { padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);font-size:10px;font-family:inherit;cursor:pointer;line-height:1.6; }
-    .card-action-btn.danger { color:var(--red);border-color:#7f1d1d; }
-    .card-action-btn.info   { color:var(--blue);border-color:#1e3a8a; }
-    .card-action-btn:disabled { opacity:.4;cursor:not-allowed; }
-
-    /* ── Inline confirm banner ── */
-    .inline-confirm { background:#1a0a0a;border:1px solid var(--red);border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12px; }
-    .inline-confirm .ic-msg { color:var(--text);margin-bottom:8px;line-height:1.5; }
-    .inline-confirm .ic-btns { display:flex;gap:8px; }
-
-    /* ── Collection action bar (above cards table) ── */
-    .collection-actions { display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border); }
-    .collection-actions .ca-label { font-size:10px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;margin-right:4px; }
-
     /* ── CSV Tab ── */
     .csv-section { background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px; }
     .csv-section h3 { font-size:13px;font-weight:bold;color:var(--text);margin-bottom:6px; }
@@ -148,37 +133,12 @@
     .drop-zone .dz-title { font-size:14px;font-weight:bold;color:var(--text);margin-bottom:4px; }
     .drop-zone .dz-sub   { font-size:12px;color:var(--dim); }
     .hidden-file { display:none; }
+
     .import-result { border-radius:8px;padding:12px 14px;margin-top:12px;font-size:12px;line-height:1.7; }
     .import-result.ok   { background:#052e16;border:1px solid #065f46;color:var(--green); }
     .import-result.warn { background:#1a1500;border:1px solid var(--accent-d);color:var(--accent); }
     .import-result.err  { background:#1a0a0a;border:1px solid var(--red);color:var(--red); }
     .import-result.info { background:#0c1a3a;border:1px solid #1e3a8a;color:var(--blue); }
-
-    /* ── Player Search Tab ── */
-    .search-tab-wrap { padding:14px; }
-    .autocomplete-wrap { position:relative;margin-bottom:14px; }
-    .autocomplete-input { padding:10px 14px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit;-webkit-appearance:none; }
-    .autocomplete-input:focus { outline:none;border-color:var(--accent-d); }
-    .autocomplete-dropdown { position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--accent-d);border-radius:0 0 8px 8px;z-index:100;max-height:240px;overflow-y:auto; }
-    .autocomplete-item { padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center; }
-    .autocomplete-item:hover,.autocomplete-item.active { background:var(--surface2); }
-    .autocomplete-item:last-child { border-bottom:none; }
-    .autocomplete-item .ac-name { color:var(--text);font-weight:bold; }
-    .autocomplete-item .ac-meta { color:var(--dim);font-size:10px; }
-
-    /* ── Item Detail Panel ── */
-    .item-detail { background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden; }
-    .item-detail-header { background:var(--surface2);padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:10px; }
-    .item-detail-header h3 { font-size:17px;font-weight:bold; }
-    .item-detail-header .id-meta { font-size:11px;color:var(--dim);margin-top:3px; }
-    .item-detail-body { padding:14px; }
-    .item-attr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px; }
-    .item-attr { background:var(--surface2);border-radius:6px;padding:7px 10px; }
-    .item-attr .ia-label { font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:2px; }
-    .item-attr .ia-val   { font-size:13px;color:var(--text);font-weight:bold; }
-    .item-attr-section { font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin:14px 0 6px;border-bottom:1px solid var(--border);padding-bottom:4px; }
-    .item-locations { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }
-    .loc-badge { background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:11px;color:var(--blue); }
 
     /* ── Data Refresh Panel ── */
     .refresh-panel { background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center; }
@@ -216,14 +176,10 @@ const LS_KEY    = "cabrera_v3";
 const CSV_FILENAME = "cabrera_collection.csv";
 const CSV_HEADERS  = ["uuid", "card_name", "collection"];
 
-// Netlify function endpoints
-const API_GET_CACHE             = "/api/get-cache";
-const API_REFRESH_ITEMS         = "/api/refresh-items";
-const API_REFRESH_LISTINGS      = "/api/refresh-listings";
-const API_REFRESH_LISTING_SINGLE = "/api/refresh-listing-single";
-const API_UPDATE_ITEM           = "/api/update-item";
-const API_DELETE_CARDS          = "/api/delete-cards";
-const THESHOW_ITEM_API          = "https://mlb26.theshow.com/apis/item.json";
+// Netlify function endpoints (same-origin, no CORS needed)
+const API_GET_CACHE        = "/api/get-cache";
+const API_REFRESH_ITEMS    = "/api/refresh-items";
+const API_REFRESH_LISTINGS = "/api/refresh-listings";
 
 // Fallback proxies for direct TheShow API calls (used only if cache is empty)
 const PROXIES = [
@@ -820,11 +776,9 @@ function App() {
         const p = prices[card.uuid] || {};
         return {
           ...card,
-          // sellNowPrice = what sellers are asking = cost to you to acquire the card now
-          // buyNowPrice  = what buyers are offering = revenue if you sell now
-          sellNowPrice: p.sellNowPrice || 0,
-          buyNowPrice:  p.buyNowPrice  || 0,
-          seriesId:     series.id,
+          sellPrice: p.sellPrice || 0,
+          buyPrice:  p.buyPrice  || 0,
+          seriesId:  series.id,
         };
       });
 
@@ -833,11 +787,16 @@ function App() {
       for (const [uuid, p] of Object.entries(prices)) {
         if (!seenUUIDs.has(uuid)) {
           merged.push({
-            uuid, name:uuid, position:"", team:"", rarity:"",
-            locations:["Community Market"], isSellable:true,
-            sellNowPrice: p.sellNowPrice || 0,
-            buyNowPrice:  p.buyNowPrice  || 0,
-            seriesId: series.id,
+            uuid,
+            name:      uuid, // name unknown without Item API — will show as UUID until next items refresh
+            position:  "",
+            team:      "",
+            rarity:    "",
+            locations: ["Community Market"],
+            isSellable: true,
+            sellPrice: p.sellPrice || 0,
+            buyPrice:  p.buyPrice  || 0,
+            seriesId:  series.id,
           });
         }
       }
@@ -1103,35 +1062,41 @@ function App() {
 
   const handleModalClose = useCallback(()=>{ setShowModal(false); },[]);
 
+  // ── Computed stats ────────────────────────────────────────────────────────
   const seriesStats=useMemo(()=>SERIES_LIST.map(series=>{
     const cards=allCards[series.id]||[];
     const cc=cards.filter(c=>collected[c.uuid]).length;
     const needed=Math.max(0,series.required-cc);
 
-    // sellNowPrice = the price you pay to buy a card immediately (what we use for cost estimates)
-    // buyNowPrice  = what you'd get selling the card immediately (not relevant for cost estimates)
-    const marketCards    = cards.filter(c=>c.sellNowPrice>0);
-    const nonMarketCards = cards.filter(c=>!c.sellNowPrice);
+    // Only uncollected market-priced cards factor into stub cost
+    const marketCards    = cards.filter(c=>c.sellPrice>0||c.buyPrice>0);
+    const nonMarketCards = cards.filter(c=>!c.sellPrice&&!c.buyPrice);
 
     const notCollectedMarket = marketCards
       .filter(c=>!collected[c.uuid])
-      .sort((a,b)=>(a.sellNowPrice||999999999)-(b.sellNowPrice||999999999));
+      .sort((a,b)=>(a.sellPrice||999999999)-(b.sellPrice||999999999));
 
-    // Low cost = sum of the cheapest (needed) cards' sell-now prices
     let low=0;
-    notCollectedMarket.slice(0,needed).forEach(c=>{low+=c.sellNowPrice||0;});
-
-    // High cost = sum of the most expensive (needed) cards' sell-now prices
-    const expensive=[...notCollectedMarket].sort((a,b)=>(b.sellNowPrice||0)-(a.sellNowPrice||0)).slice(0,needed);
+    notCollectedMarket.slice(0,needed).forEach(c=>{low+=c.sellPrice||0;});
+    const expN=[...notCollectedMarket].sort((a,b)=>(b.buyPrice||0)-(a.buyPrice||0)).slice(0,needed);
     let high=0;
-    expensive.forEach(c=>{high+=c.sellNowPrice||0;});
+    expN.forEach(c=>{high+=c.buyPrice||0;});
 
-    const countMismatch = cards.length>0 && cards.length!==series.required;
+    // Count mismatch: flag when total cards in database differs from required count
+    const countMismatch = cards.length > 0 && cards.length !== series.required;
 
     return{
-      ...series, cards, collectedCount:cc, needed, lowCost:low, highCost:high,
-      complete:cc>=series.required, totalCards:cards.length,
-      marketCardCount:marketCards.length, nonMarketCount:nonMarketCards.length, countMismatch,
+      ...series,
+      cards,
+      collectedCount: cc,
+      needed,
+      lowCost:  low,
+      highCost: high,
+      complete: cc>=series.required,
+      totalCards:      cards.length,
+      marketCardCount: marketCards.length,
+      nonMarketCount:  nonMarketCards.length,
+      countMismatch,
     };
   }),[allCards,collected]);
 
@@ -1143,6 +1108,12 @@ function App() {
   },[seriesStats,includedSeries]);
 
   const totalCollected=Object.values(collected).filter(Boolean).length;
+  const activeData=seriesStats.find(s=>s.id===activeSeries);
+  const filteredCards=useMemo(()=>{
+    if(!activeData) return[];
+    const q=searchQuery.toLowerCase();
+    return activeData.cards.filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||c.team.toLowerCase().includes(q));
+  },[activeData,searchQuery]);
 
   const statusInfo=(()=>{
     if(loadState==="idle") return{dot:"dot-warn",text:"Not loaded"};
@@ -1198,7 +1169,6 @@ function App() {
       <div className="tabs">
         <button className={`tab-btn ${activeTab==="summary"?"active":""}`} onClick={()=>{setActiveTab("summary");setActiveSeries(null);}}>📊 Summary</button>
         <button className={`tab-btn ${activeTab==="cards"?"active":""}`}   onClick={()=>setActiveTab("cards")}>🃏 Cards</button>
-        <button className={`tab-btn ${activeTab==="search"?"active":""}`}  onClick={()=>setActiveTab("search")}>🔍 Player Search</button>
         <button className={`tab-btn ${activeTab==="csv"?"active":""}`}     onClick={()=>setActiveTab("csv")}>📁 CSV</button>
       </div>
 
@@ -1254,7 +1224,7 @@ function App() {
                 ? <><span className="spin-sm"/> In progress…</>
                 : "🔄 Refresh Prices"}
             </button>
-            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes at 6 AM and 8 PM Pacific daily</div>
+            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes every hour on the hour</div>
           </div>
         </div>
 
@@ -1386,19 +1356,56 @@ function App() {
 
       {/* ── Cards Tab ── */}
       {loadState==="done"&&activeTab==="cards"&&(
-        <CardsTab
-          allCards={allCards} collected={collected} saveCollected={saveCollected}
-          activeSeries={activeSeries} setActiveSeries={setActiveSeries}
-          searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-          seriesStats={seriesStats}
-          onItemRefreshed={card=>{ loadFromCache(); }}
-          onDataChanged={loadFromCache}
-        />
-      )}
-
-      {/* ── Player Search Tab ── */}
-      {activeTab==="search"&&(
-        <PlayerSearchTab allCards={allCards} onDataChanged={loadFromCache}/>
+        <div className="page">
+          <div className="pill-row">
+            {SERIES_LIST.map(s=>(
+              <button key={s.id} className={`pill ${activeSeries===s.id?"active":""}`} onClick={()=>{setActiveSeries(s.id);setSearchQuery("");}}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {activeSeries&&activeData?(
+            <div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:15,fontWeight:"bold"}}>{activeData.name}</div>
+                <div style={{fontSize:11,color:"var(--dim)",marginTop:2}}>{activeData.collectedCount}/{activeData.required} required · {activeData.needed} still needed · {activeData.totalCards} total</div>
+              </div>
+              <input className="search-input" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search name, position, team…"/>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Have</th><th className="left">Card Name</th><th>Rar</th><th>Pos</th><th>Team</th><th className="left">Where to Find</th><th>Buy Now</th><th>Sell</th></tr></thead>
+                  <tbody>
+                    {filteredCards.length===0&&<tr><td colSpan={8} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
+                    {filteredCards.map(card=>(
+                      <tr key={card.uuid} className={collected[card.uuid]?"crow":""}>
+                        <td className="center"><input type="checkbox" checked={!!collected[card.uuid]} onChange={()=>saveCollected({...collected,[card.uuid]:!collected[card.uuid]})} style={{accentColor:"#34d399"}}/></td>
+                        <td className="left" style={{fontWeight:collected[card.uuid]?"bold":"normal",color:collected[card.uuid]?"var(--green)":"var(--text)",maxWidth:150,whiteSpace:"normal",lineHeight:1.3}}>{card.name}</td>
+                        <td className="center"><span className="rbadge" style={{background:rarityBg(card.rarity)}}>{card.rarity?card.rarity.charAt(0).toUpperCase():"?"}</span></td>
+                        <td className="center" style={{color:"var(--dim)",fontSize:11}}>{card.position}</td>
+                        <td className="center" style={{color:"var(--dim)",fontSize:10}}>{card.team}</td>
+                        <td className="left" style={{color:"var(--dim)",fontSize:11,whiteSpace:"normal",maxWidth:160,lineHeight:1.4}}>
+                          {card.locations && card.locations.length > 0
+                            ? card.locations.join(" · ")
+                            : card.isSellable
+                              ? "Community Market"
+                              : (SOURCE_HINTS[activeSeries] || "Program Reward")}
+                        </td>
+                        <td className="right" style={{color:card.buyPrice>0?"var(--accent)":"var(--dim)"}}>{card.buyPrice>0?card.buyPrice.toLocaleString():"—"}</td>
+                        <td className="right" style={{color:card.sellPrice>0?"var(--blue)":"var(--dim)"}}>{card.sellPrice>0?card.sellPrice.toLocaleString():"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="cost-chips">
+                <div className="chip"><span style={{color:"var(--dim)"}}>Low to finish: </span><span style={{fontWeight:"bold",color:"var(--green)"}}>{activeData.lowCost.toLocaleString()} stubs</span></div>
+                <div className="chip"><span style={{color:"var(--dim)"}}>High to finish: </span><span style={{fontWeight:"bold",color:"var(--red)"}}>{activeData.highCost.toLocaleString()} stubs</span></div>
+              </div>
+            </div>
+          ):(
+            <div className="empty">👆 Select a collection above to browse its cards</div>
+          )}
+        </div>
       )}
 
       {/* ── CSV Tab ── */}
@@ -1413,445 +1420,10 @@ function App() {
       </div>
       <div className="legend">
         <span><span style={{color:"var(--green)"}}>■</span> Collected</span>
-        <span><span style={{color:"var(--blue)"}}>■</span> Sell Now = market pays you if you sell immediately</span>
-        <span><span style={{color:"var(--accent)"}}>■</span> Buy Now = cost to acquire card immediately</span>
-        <span>Low cost = cheapest buy-now prices · High cost = most expensive buy-now prices · Shared cache from Netlify</span>
+        <span><span style={{color:"var(--blue)"}}>■</span> Sell = market pays you</span>
+        <span><span style={{color:"var(--accent)"}}>■</span> Buy Now = instant cost</span>
+        <span>Low = cheapest needed · High = buy-now prices · Shared cache from Netlify</span>
       </div>
-    </div>
-  );
-}
-
-// ── CardsTab Component ────────────────────────────────────────────────────────
-function CardsTab({ allCards, collected, saveCollected, activeSeries, setActiveSeries, searchQuery, setSearchQuery, seriesStats, onDataChanged }) {
-  const [confirmDelete,    setConfirmDelete]    = useState(null); // {type:"card"|"collection", card?, series}
-  const [confirmListings,  setConfirmListings]  = useState(null); // series name
-  const [actionMsg,        setActionMsg]        = useState(null); // {text,type}
-  const [refreshingCard,   setRefreshingCard]   = useState(null); // uuid being refreshed
-  const [refreshingSeries, setRefreshingSeries] = useState(false);
-
-  const activeData = seriesStats.find(s=>s.id===activeSeries);
-
-  const filteredCards = useMemo(()=>{
-    if(!activeData) return[];
-    const q=searchQuery.toLowerCase();
-    return activeData.cards.filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||c.team.toLowerCase().includes(q));
-  },[activeData,searchQuery]);
-
-  const showMsg = (text,type="ok") => {
-    setActionMsg({text,type});
-    setTimeout(()=>setActionMsg(null), 5000);
-  };
-
-  // Delete a single card
-  const doDeleteCard = async (card) => {
-    setConfirmDelete(null);
-    try {
-      const res = await fetch(API_DELETE_CARDS, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid}) });
-      const d = await res.json();
-      if (!d.ok) throw new Error(d.error||"Delete failed");
-      showMsg(`✓ Removed "${card.name}" from ${SERIES_LIST.find(s=>s.id===activeSeries)?.name}`);
-      onDataChanged();
-    } catch(e) { showMsg(`✗ ${e.message}`,"err"); }
-  };
-
-  // Delete all cards in a collection
-  const doDeleteCollection = async () => {
-    setConfirmDelete(null);
-    try {
-      const res = await fetch(API_DELETE_CARDS, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({series_id:activeSeries}) });
-      const d = await res.json();
-      if (!d.ok) throw new Error(d.error||"Delete failed");
-      showMsg(`✓ Cleared all ${d.deleted} cards from ${SERIES_LIST.find(s=>s.id===activeSeries)?.name}. They will return on next card refresh.`);
-      onDataChanged();
-    } catch(e) { showMsg(`✗ ${e.message}`,"err"); }
-  };
-
-  // Refresh listings for entire collection
-  const doRefreshCollectionListings = async () => {
-    setConfirmListings(null);
-    setRefreshingSeries(true);
-    try {
-      const res = await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({series_id:activeSeries}) });
-      const d = await res.json();
-      if (!d.ok) throw new Error(d.error||"Refresh failed");
-      showMsg(`✓ Refreshed prices for ${d.count} cards in ${SERIES_LIST.find(s=>s.id===activeSeries)?.name}`);
-      onDataChanged();
-    } catch(e) { showMsg(`✗ ${e.message}`,"err"); }
-    finally { setRefreshingSeries(false); }
-  };
-
-  // Refresh single card listing + item detail
-  const doRefreshCard = async (card) => {
-    setRefreshingCard(card.uuid);
-    try {
-      // Refresh listing price
-      await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid, series_id:activeSeries}) });
-      // Refresh item detail (also updates name if it was a UUID placeholder)
-      await fetch(API_UPDATE_ITEM, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid}) });
-      onDataChanged();
-    } catch(e) { showMsg(`✗ Card refresh failed: ${e.message}`,"err"); }
-    finally { setRefreshingCard(null); }
-  };
-
-  const seriesName = SERIES_LIST.find(s=>s.id===activeSeries)?.name||"";
-
-  return (
-    <div className="page">
-      {/* Inline confirm dialogs */}
-      {confirmDelete?.type==="card" && (
-        <div className="inline-confirm">
-          <div className="ic-msg">Remove <strong>{confirmDelete.card.name}</strong> from <strong>{seriesName}</strong>?<br/><span style={{color:"var(--dim)",fontSize:11}}>Your collected status for this card is preserved.</span></div>
-          <div className="ic-btns">
-            <button className="btn btn-danger" onClick={()=>doDeleteCard(confirmDelete.card)}>Remove Card</button>
-            <button className="btn btn-secondary" onClick={()=>setConfirmDelete(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
-      {confirmDelete?.type==="collection" && (
-        <div className="inline-confirm">
-          <div className="ic-msg">Clear all cards from <strong>{seriesName}</strong>?<br/><span style={{color:"var(--dim)",fontSize:11}}>Cards will be restored on next refresh. Your collected status is preserved.</span></div>
-          <div className="ic-btns">
-            <button className="btn btn-danger" onClick={doDeleteCollection}>Clear Collection</button>
-            <button className="btn btn-secondary" onClick={()=>setConfirmDelete(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
-      {confirmListings && (
-        <div className="inline-confirm" style={{borderColor:"var(--blue)"}}>
-          <div className="ic-msg">Refresh market prices for <strong>{seriesName}</strong>?<br/><span style={{color:"var(--dim)",fontSize:11}}>This fetches current buy/sell prices for all cards in this collection.</span></div>
-          <div className="ic-btns">
-            <button className="btn btn-primary" onClick={doRefreshCollectionListings}>Refresh Prices</button>
-            <button className="btn btn-secondary" onClick={()=>setConfirmListings(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Action status message */}
-      {actionMsg && (
-        <div style={{marginBottom:10,padding:"8px 12px",borderRadius:7,fontSize:12,
-          background:actionMsg.type==="ok"?"#052e16":"#1a0a0a",
-          border:`1px solid ${actionMsg.type==="ok"?"#065f46":"#7f1d1d"}`,
-          color:actionMsg.type==="ok"?"var(--green)":"var(--red)"}}>
-          {actionMsg.text}
-        </div>
-      )}
-
-      {/* Series pills */}
-      <div className="pill-row">
-        {SERIES_LIST.map(s=>(
-          <button key={s.id} className={`pill ${activeSeries===s.id?"active":""}`}
-            onClick={()=>{setActiveSeries(s.id);setSearchQuery("");setConfirmDelete(null);setConfirmListings(null);}}>
-            {s.name}
-          </button>
-        ))}
-      </div>
-
-      {activeSeries&&activeData?(
-        <div>
-          {/* Collection header + action bar */}
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:15,fontWeight:"bold"}}>{activeData.name}</div>
-            <div style={{fontSize:11,color:"var(--dim)",marginTop:2}}>
-              {activeData.collectedCount}/{activeData.required} required · {activeData.needed} still needed · {activeData.totalCards} in database
-            </div>
-          </div>
-
-          {/* Collection-level actions */}
-          <div className="collection-actions">
-            <span className="ca-label">Collection:</span>
-            <button className="refresh-btn" style={{color:"var(--blue)",borderColor:"#1e3a8a",fontSize:11}}
-              disabled={refreshingSeries}
-              onClick={()=>{setConfirmDelete(null);setConfirmListings(seriesName);}}>
-              {refreshingSeries?<><span className="spin-sm"/> Refreshing…</>:"💰 Refresh Prices"}
-            </button>
-            <button className="card-action-btn danger"
-              onClick={()=>{setConfirmListings(null);setConfirmDelete({type:"collection"});}}>
-              🗑 Clear All Cards
-            </button>
-          </div>
-
-          <input className="search-input" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search name, position, team…"/>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Have</th>
-                  <th className="left">Card Name</th>
-                  <th>Rar</th>
-                  <th>Pos</th>
-                  <th>Team</th>
-                  <th className="left">Where to Find</th>
-                  <th title="Cost to buy this card immediately from the market">Buy Now</th>
-                  <th title="What the market will pay you if you sell now">Sell Now</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCards.length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
-                {filteredCards.map(card=>(
-                  <tr key={card.uuid} className={collected[card.uuid]?"crow":""}>
-                    <td className="center">
-                      <input type="checkbox" checked={!!collected[card.uuid]}
-                        onChange={()=>saveCollected({...collected,[card.uuid]:!collected[card.uuid]})}
-                        style={{accentColor:"#34d399"}}/>
-                    </td>
-                    <td className="left" style={{fontWeight:collected[card.uuid]?"bold":"normal",color:collected[card.uuid]?"var(--green)":"var(--text)",maxWidth:150,whiteSpace:"normal",lineHeight:1.3}}>
-                      {card.name}
-                    </td>
-                    <td className="center">
-                      <span className="rbadge" style={{background:rarityBg(card.rarity)}}>
-                        {card.rarity?card.rarity.charAt(0).toUpperCase():"?"}
-                      </span>
-                    </td>
-                    <td className="center" style={{color:"var(--dim)",fontSize:11}}>{card.position}</td>
-                    <td className="center" style={{color:"var(--dim)",fontSize:10}}>{card.team}</td>
-                    <td className="left" style={{color:"var(--dim)",fontSize:11,whiteSpace:"normal",maxWidth:160,lineHeight:1.4}}>
-                      {card.locations&&card.locations.length>0
-                        ?card.locations.join(" · ")
-                        :card.isSellable?"Community Market":(SOURCE_HINTS[activeSeries]||"Program Reward")}
-                    </td>
-                    <td className="right" style={{color:card.sellNowPrice>0?"var(--accent)":"var(--dim)"}}>
-                      {card.sellNowPrice>0?card.sellNowPrice.toLocaleString():"—"}
-                    </td>
-                    <td className="right" style={{color:card.buyNowPrice>0?"var(--blue)":"var(--dim)"}}>
-                      {card.buyNowPrice>0?card.buyNowPrice.toLocaleString():"—"}
-                    </td>
-                    <td className="center" style={{whiteSpace:"nowrap"}}>
-                      <button className="card-action-btn info" style={{marginRight:4}}
-                        disabled={refreshingCard===card.uuid}
-                        onClick={()=>doRefreshCard(card)}
-                        title="Refresh price and card detail from TheShow.com">
-                        {refreshingCard===card.uuid?<span className="spin-sm"/>:"🔄"}
-                      </button>
-                      <button className="card-action-btn danger"
-                        onClick={()=>{setConfirmListings(null);setConfirmDelete({type:"card",card});}}
-                        title="Remove this card from the database">
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="cost-chips">
-            <div className="chip"><span style={{color:"var(--dim)"}}>Low to finish: </span><span style={{fontWeight:"bold",color:"var(--green)"}}>{activeData.lowCost.toLocaleString()} stubs</span></div>
-            <div className="chip"><span style={{color:"var(--dim)"}}>High to finish: </span><span style={{fontWeight:"bold",color:"var(--red)"}}>{activeData.highCost.toLocaleString()} stubs</span></div>
-            <div className="chip"><span style={{color:"var(--dim)"}}>In database: </span><span style={{fontWeight:"bold",color:activeData.countMismatch?"var(--accent)":"var(--text)"}}>{activeData.totalCards} / {activeData.required} required</span></div>
-          </div>
-        </div>
-      ):(
-        <div className="empty">👆 Select a collection above to browse its cards</div>
-      )}
-    </div>
-  );
-}
-
-// ── PlayerSearchTab Component ─────────────────────────────────────────────────
-function PlayerSearchTab({ allCards, onDataChanged }) {
-  const [query,        setQuery]        = useState("");
-  const [suggestions,  setSuggestions]  = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedCard, setSelectedCard] = useState(null);
-  const [itemDetail,   setItemDetail]   = useState(null);
-  const [loading,      setLoading]      = useState(false);
-  const [saveMsg,      setSaveMsg]      = useState(null);
-  const inputRef = useRef();
-
-  // Build flat card list from allCards for autocomplete
-  const allCardFlat = useMemo(()=>{
-    const list=[];
-    for(const [sid,cards] of Object.entries(allCards)){
-      for(const card of cards){
-        list.push({...card, seriesId:sid, seriesName:SERIES_LIST.find(s=>s.id===sid)?.name||sid});
-      }
-    }
-    return list;
-  },[allCards]);
-
-  useEffect(()=>{
-    if(!query.trim()||query.length<2){ setSuggestions([]); setShowDropdown(false); return; }
-    const q=query.toLowerCase();
-    const matches=allCardFlat
-      .filter(c=>c.name.toLowerCase().includes(q)||c.uuid.toLowerCase().startsWith(q))
-      .slice(0,12);
-    setSuggestions(matches);
-    setShowDropdown(matches.length>0);
-  },[query,allCardFlat]);
-
-  const selectCard = async (card) => {
-    setQuery(card.name);
-    setSelectedCard(card);
-    setShowDropdown(false);
-    setSuggestions([]);
-    setItemDetail(null);
-    setSaveMsg(null);
-    setLoading(true);
-    try {
-      // Fetch fresh item detail from Item API via the frontend (no CORS issue since we're on netlify)
-      const res = await fetch(API_UPDATE_ITEM, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({uuid:card.uuid}),
-      });
-      const d = await res.json();
-      if(!d.ok) throw new Error(d.error||"Item fetch failed");
-      setItemDetail(d.card);
-      if(d.isNew || JSON.stringify(d.card)!==JSON.stringify(card)){
-        setSaveMsg("✓ Card data updated in database");
-        onDataChanged();
-      }
-    } catch(e){
-      setSaveMsg(`✗ Could not fetch item detail: ${e.message}`);
-    }
-    setLoading(false);
-  };
-
-  // Human-readable label for Item API field names
-  const fieldLabel = key => ({
-    ovr:"Overall Rating", position:"Position", display_position:"Display Position",
-    team:"Team", team_short_name:"Team Code", rarity:"Rarity", series:"Series/Collection",
-    series_year:"Series Year", jersey_number:"Jersey #", age:"Age",
-    bat_hand:"Bats", throw_hand:"Throws", weight:"Weight", height:"Height", born:"Born",
-    is_hitter:"Is Hitter", stamina:"Stamina", pitching_clutch:"Pitching Clutch",
-    hits_per_bf:"Hits per BF", k_per_bf:"K per BF", bb_per_bf:"BB per BF", hr_per_bf:"HR per BF",
-    pitch_velocity:"Pitch Velocity", pitch_control:"Pitch Control", pitch_movement:"Pitch Movement",
-    contact_left:"Contact Left", contact_right:"Contact Right",
-    power_left:"Power Left", power_right:"Power Right",
-    plate_vision:"Plate Vision", plate_discipline:"Plate Discipline",
-    batting_clutch:"Batting Clutch", bunting_ability:"Bunting Ability",
-    drag_bunting_ability:"Drag Bunting", hitting_durability:"Hitting Durability",
-    fielding_durability:"Fielding Durability", fielding_ability:"Fielding Ability",
-    arm_strength:"Arm Strength", arm_accuracy:"Arm Accuracy",
-    reaction_time:"Reaction Time", blocking:"Blocking",
-    speed:"Speed", baserunning_ability:"Baserunning", baserunning_aggression:"BR Aggression",
-    isSellable:"Market Sellable",
-  }[key] || key.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()));
-
-  // Fields to skip (arrays/objects rendered separately, or irrelevant)
-  const SKIP_FIELDS = new Set(["uuid","name","type","img","pitches","quirks","locations",
-    "series_texture_name","display_secondary_positions"]);
-
-  const renderDetail = (detail) => {
-    if(!detail) return null;
-    const scalarFields = Object.entries(detail).filter(([k,v])=>
-      !SKIP_FIELDS.has(k) && v!==null && v!==undefined && v!=="" && v!==false && v!==0
-    );
-    const pitches = detail.pitches||[];
-    const quirks  = detail.quirks||[];
-    const locs    = detail.locations||[];
-
-    return (
-      <div className="item-detail">
-        <div className="item-detail-header">
-          <div>
-            <h3>{detail.name}</h3>
-            <div className="id-meta">
-              {detail.series} · {detail.team} · OVR {detail.ovr} · {detail.display_position}
-            </div>
-          </div>
-          <span className="rbadge" style={{background:rarityBg(detail.rarity),fontSize:12}}>
-            {detail.rarity}
-          </span>
-        </div>
-        <div className="item-detail-body">
-          {locs.length>0&&(
-            <>
-              <div className="item-attr-section">Where to Find</div>
-              <div className="item-locations">
-                {locs.map((l,i)=><span key={i} className="loc-badge">{l}</span>)}
-              </div>
-            </>
-          )}
-
-          <div className="item-attr-section">Card Attributes</div>
-          <div className="item-attr-grid">
-            {scalarFields.map(([k,v])=>(
-              <div key={k} className="item-attr">
-                <div className="ia-label">{fieldLabel(k)}</div>
-                <div className="ia-val">{typeof v==="boolean"?v?"Yes":"No":String(v)}</div>
-              </div>
-            ))}
-          </div>
-
-          {pitches.length>0&&(
-            <>
-              <div className="item-attr-section">Pitches</div>
-              <div className="item-attr-grid">
-                {pitches.map((p,i)=>(
-                  <div key={i} className="item-attr">
-                    <div className="ia-label">{p.name}</div>
-                    <div className="ia-val" style={{fontSize:11,fontWeight:"normal"}}>
-                      {p.speed}mph · CTL {p.control} · MOV {p.movement}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {quirks.length>0&&(
-            <>
-              <div className="item-attr-section">Quirks</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {quirks.map((q,i)=>(
-                  <div key={i} title={q.description} className="item-attr" style={{cursor:"help"}}>
-                    <div className="ia-label">Quirk</div>
-                    <div className="ia-val" style={{fontSize:12}}>{q.name}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="search-tab-wrap">
-      <div style={{fontSize:12,color:"var(--dim)",marginBottom:10}}>
-        Search cards stored in the local database. Selecting a card fetches its full detail from TheShow.com.
-      </div>
-
-      <div className="autocomplete-wrap">
-        <input ref={inputRef} className="autocomplete-input" value={query}
-          onChange={e=>{setQuery(e.target.value);setSelectedCard(null);setItemDetail(null);setSaveMsg(null);}}
-          onFocus={()=>suggestions.length>0&&setShowDropdown(true)}
-          onBlur={()=>setTimeout(()=>setShowDropdown(false),150)}
-          placeholder="Type a card name or start of UUID…"/>
-        {showDropdown&&(
-          <div className="autocomplete-dropdown">
-            {suggestions.map(card=>(
-              <div key={card.uuid} className="autocomplete-item" onMouseDown={()=>selectCard(card)}>
-                <span className="ac-name">{card.name}</span>
-                <span className="ac-meta">{card.seriesName} · {card.position} · {card.team}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {loading&&(
-        <div style={{textAlign:"center",padding:24,color:"var(--dim)"}}>
-          <span className="spin-sm"/> Loading card detail…
-        </div>
-      )}
-
-      {saveMsg&&(
-        <div style={{marginBottom:10,padding:"8px 12px",borderRadius:7,fontSize:12,
-          background:saveMsg.startsWith("✓")?"#052e16":"#1a0a0a",
-          border:`1px solid ${saveMsg.startsWith("✓")?"#065f46":"#7f1d1d"}`,
-          color:saveMsg.startsWith("✓")?"var(--green)":"var(--red)"}}>
-          {saveMsg}
-        </div>
-      )}
-
-      {itemDetail&&renderDetail(itemDetail)}
-      {!loading&&!itemDetail&&!query&&(
-        <div className="empty">🔍 Type a card name above to search</div>
-      )}
     </div>
   );
 }
@@ -1860,4 +1432,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
-
