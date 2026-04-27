@@ -10,13 +10,14 @@ export default async function handler(req, context) {
 
   const store = getStore({ name:"card-cache", consistency:"strong" });
 
-  const [itemsPayload, listingsPayload, itemsStatus, listingsStatus, checkpoint] =
+  const [itemsPayload, listingsPayload, itemsStatus, listingsStatus, checkpoint, cancelFlag] =
     await Promise.all([
       store.get("items",            { type:"json" }).catch(() => null),
       store.get("listings",         { type:"json" }).catch(() => null),
       store.get("items-status",     { type:"json" }).catch(() => null),
       store.get("listings-status",  { type:"json" }).catch(() => null),
       store.get("items-checkpoint", { type:"json" }).catch(() => null),
+      store.get("items-cancel",     { type:"json" }).catch(() => null),
     ]);
 
   const response = {
@@ -31,14 +32,15 @@ export default async function handler(req, context) {
       totalListings: listingsPayload.totalListings,
       data:          listingsPayload.data,
     } : null,
-    itemsRefreshing:    itemsStatus?.status    === "refreshing",
-    itemsPhase:         itemsStatus?.phase     || null,
-    itemsError:         itemsStatus?.status    === "error" ? itemsStatus.error : null,
+    itemsRefreshing:    itemsStatus?.status === "refreshing",
+    itemsCancelled:     itemsStatus?.status === "cancelled",
+    cancelPending:      !!cancelFlag?.cancelled,   // cancel was requested but function hasn't stopped yet
+    itemsPhase:         itemsStatus?.phase  || null,
+    itemsError:         itemsStatus?.status === "error" ? itemsStatus.error : null,
     listingsRefreshing: listingsStatus?.status === "refreshing",
     listingsError:      listingsStatus?.status === "error" ? listingsStatus.error : null,
-    // Checkpoint info for UI display (optional)
-    hasCheckpoint: !!checkpoint,
-    checkpointPhase: checkpoint?.phase || null,
+    hasCheckpoint:      !!checkpoint,
+    checkpointPhase:    checkpoint?.phase || null,
   };
 
   return new Response(JSON.stringify(response), {
