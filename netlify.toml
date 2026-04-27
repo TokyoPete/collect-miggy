@@ -6,16 +6,11 @@
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/blobs"]
 
-# Card database: weekly, Sunday 2 AM Pacific
-# PDT (Apr-Nov) = 10:00 UTC | PST (Nov-Mar) = 09:00 UTC
+# Items DB: weekly, Sunday 2 AM Pacific (10:00 UTC covers PDT Apr-Nov)
+# Change to "0 9 * * 0" for PST Nov-Mar
 [functions."refresh-items-background"]
   schedule = "0 10 * * 0"
 
-# Market prices: 6 AM Pacific (14:00 UTC PDT) and 8 PM Pacific (04:00 UTC PDT next day)
+# Market prices: every hour on the hour
 [functions."refresh-listings-background"]
-  schedule = "0 14 * * *"
-
-# Second daily listings run — 8 PM Pacific PDT = 03:00 UTC next day
-# Netlify supports only one schedule per function, so we use a second function
-[functions."refresh-listings-evening-background"]
-  schedule = "0 3 * * *"
+  schedule = "0 * * * *"
