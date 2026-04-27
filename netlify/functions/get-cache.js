@@ -1,6 +1,6 @@
 // netlify/functions/get-cache.js
-// Public read endpoint — serves items blob, listings blob, and refresh statuses.
-// Polled every 5s by the frontend during background refreshes.
+// Serves items blob, listings blob, manifest, and status blobs.
+// Polled every 3s by frontend during an active refresh.
 
 import { getStore } from "@netlify/blobs";
 import { corsHeaders } from "./_shared.js";
@@ -10,44 +10,60 @@ export default async function handler(req, context) {
 
   const store = getStore({ name:"card-cache", consistency:"strong" });
 
-  const [itemsPayload, listingsPayload, itemsStatus, listingsStatus, checkpoint, cancelFlag] =
+  const [itemsPayload, listingsPayload, itemsStatus, listingsStatus, checkpoint, cancelFlag, manifest] =
     await Promise.all([
-      store.get("items",            { type:"json" }).catch(() => null),
-      store.get("listings",         { type:"json" }).catch(() => null),
-      store.get("items-status",     { type:"json" }).catch(() => null),
-      store.get("listings-status",  { type:"json" }).catch(() => null),
-      store.get("items-checkpoint", { type:"json" }).catch(() => null),
-      store.get("items-cancel",     { type:"json" }).catch(() => null),
+      store.get("items",           { type:"json" }).catch(() => null),
+      store.get("listings",        { type:"json" }).catch(() => null),
+      store.get("items-status",    { type:"json" }).catch(() => null),
+      store.get("listings-status", { type:"json" }).catch(() => null),
+      store.get("items-checkpoint",{ type:"json" }).catch(() => null),
+      store.get("items-cancel",    { type:"json" }).catch(() => null),
+      store.get("items-manifest",  { type:"json" }).catch(() => null),
     ]);
 
   const response = {
+    // Full items blob — cabData + otherData + meta
     items: itemsPayload ? {
-      updatedAt:  itemsPayload.updatedAt,
-      totalCards: itemsPayload.totalCards,
-      totalUUIDs: itemsPayload.totalUUIDs,
-      data:       itemsPayload.data,
+      updatedAt:         itemsPayload.updatedAt,
+      pagesLoaded:       itemsPayload.pagesLoaded,
+      totalPages:        itemsPayload.totalPages,
+      complete:          itemsPayload.complete,
+      totalCards:        itemsPayload.totalCards,
+      totalCabreraCards: itemsPayload.totalCabreraCards,
+      totalOtherCards:   itemsPayload.totalOtherCards,
+      seriesMeta:        itemsPayload.seriesMeta || [],
+      cabData:           itemsPayload.cabData,
+      otherData:         itemsPayload.otherData,
     } : null,
+
     listings: listingsPayload ? {
       updatedAt:     listingsPayload.updatedAt,
       totalListings: listingsPayload.totalListings,
       data:          listingsPayload.data,
     } : null,
-    itemsRefreshing:    itemsStatus?.status === "refreshing",
-    itemsCancelled:     itemsStatus?.status === "cancelled",
-    cancelPending:      !!cancelFlag?.cancelled,   // cancel was requested but function hasn't stopped yet
-    itemsPhase:         itemsStatus?.phase  || null,
-    itemsError:         itemsStatus?.status === "error" ? itemsStatus.error : null,
+
+    // Manifest — integrity check
+    manifest: manifest || null,
+
+    // Status fields polled by frontend
+    itemsRefreshing:    itemsStatus?.status    === "refreshing",
+    itemsCancelled:     itemsStatus?.status    === "cancelled",
+    itemsPctComplete:   itemsStatus?.pctComplete  ?? null,
+    itemsPhase:         itemsStatus?.phase         || null,
+    itemsError:         itemsStatus?.status    === "error" ? itemsStatus.error : null,
+    cancelPending:      !!cancelFlag?.cancelled,
     listingsRefreshing: listingsStatus?.status === "refreshing",
     listingsError:      listingsStatus?.status === "error" ? listingsStatus.error : null,
     hasCheckpoint:      !!checkpoint,
-    checkpointPhase:    checkpoint?.phase || null,
+    checkpointPage:     checkpoint?.lastCompletedPage || null,
+    checkpointTotal:    checkpoint?.totalPages || null,
   };
 
   return new Response(JSON.stringify(response), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "public, max-age=15, stale-while-revalidate=30",
+      "Cache-Control": "public, max-age=10, stale-while-revalidate=20",
       ...corsHeaders(),
     },
   });
