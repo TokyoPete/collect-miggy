@@ -71,5 +71,5 @@ export default async function handler(req, context) {
   catch(e) { await store.setJSON("listings-status", { status:"error", error:e.message, failedAt:new Date().toISOString() }); }
 }
 
-// 6 AM Pacific PDT = 14:00 UTC; 8 PM Pacific PDT = 03:00 UTC next day
-export const config = { schedule:"0 14 * * * | 0 3 * * *" };
+// 6 AM Pacific PDT = 14:00 UTC (Apr-Nov). Change to "0 13 * * *" for PST Nov-Mar.
+export const config = { schedule: "0 14 * * *" };
