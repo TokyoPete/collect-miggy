@@ -216,14 +216,14 @@ const LS_KEY    = "cabrera_v3";
 const CSV_FILENAME = "cabrera_collection.csv";
 const CSV_HEADERS  = ["uuid", "card_name", "collection"];
 
-// Netlify function endpoints
-const API_GET_CACHE             = "/api/get-cache";
-const API_REFRESH_ITEMS         = "/api/refresh-items";
-const API_REFRESH_LISTINGS      = "/api/refresh-listings";
+const API_GET_CACHE              = "/api/get-cache";
+const API_REFRESH_ITEMS          = "/api/refresh-items";
+const API_REFRESH_LISTINGS       = "/api/refresh-listings";
 const API_REFRESH_LISTING_SINGLE = "/api/refresh-listing-single";
-const API_UPDATE_ITEM           = "/api/update-item";
-const API_DELETE_CARDS          = "/api/delete-cards";
-const THESHOW_ITEM_API          = "https://mlb26.theshow.com/apis/item.json";
+const API_UPDATE_ITEM            = "/api/update-item";
+const API_DELETE_CARDS           = "/api/delete-cards";
+const API_CANCEL_REFRESH         = "/api/cancel-refresh";
+const THESHOW_ITEM_API           = "https://mlb26.theshow.com/apis/item.json";
 
 // Fallback proxies for direct TheShow API calls (used only if cache is empty)
 const PROXIES = [
@@ -584,174 +584,323 @@ function ImportConfirmModal({ stats, onConfirm, onCancel }) {
 }
 
 // ── CSV Tab Component ──────────────────────────────────────────────────────────
-function CSVTab({ allCards, collected, onImport, loadState }) {
-  const fileInputRef = useRef();
+
+// Items CSV helpers
+const ITEMS_CSV_FILENAME = "cabrera_items.csv";
+const ITEMS_CSV_HEADERS  = ["uuid","name","position","team","rarity","ovr","series","locations","isSellable"];
+const LOCATIONS_SEPARATOR = " | "; // consistent separator for locations array in CSV
+
+function buildItemsCSV(allCards) {
+  const rows = [ITEMS_CSV_HEADERS.join(",")];
+  for (const series of SERIES_LIST) {
+    for (const card of (allCards[series.id]||[])) {
+      const locs = Array.isArray(card.locations) ? card.locations.join(LOCATIONS_SEPARATOR) : (card.locations||"");
+      rows.push([
+        csvEscape(card.uuid),
+        csvEscape(card.name),
+        csvEscape(card.position),
+        csvEscape(card.team),
+        csvEscape(card.rarity),
+        csvEscape(card.ovr||""),
+        csvEscape(series.name),
+        csvEscape(locs),
+        csvEscape(card.isSellable?"true":"false"),
+      ].join(","));
+    }
+  }
+  return rows.join("\r\n");
+}
+
+// Parse an items CSV — returns {ok, cards:[], errors:[], skipped}
+// uuid is the primary key. Merges into existing data (update + add, no delete).
+function parseItemsCSV(text) {
+  const lines = text.replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
+  if (lines.length < 2) return { ok:false, error:"File is empty or has no data rows.", cards:[], errors:[], skipped:0 };
+
+  const header = lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,"").toLowerCase());
+  const uuidIdx      = header.indexOf("uuid");
+  const nameIdx      = header.indexOf("name");
+  const posIdx       = header.indexOf("position");
+  const teamIdx      = header.indexOf("team");
+  const rarityIdx    = header.indexOf("rarity");
+  const ovrIdx       = header.indexOf("ovr");
+  const seriesIdx    = header.indexOf("series");
+  const locsIdx      = header.indexOf("locations");
+  const sellableIdx  = header.indexOf("issellable");
+
+  if (uuidIdx === -1) return { ok:false, error:'No "uuid" column found. Required header: uuid,name,position,team,rarity,ovr,series,locations,isSellable', cards:[], errors:[], skipped:0 };
+
+  const cards = [];
+  const errors = [];
+  let skipped = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const fields = splitCSVLine(line);
+    const uuid = (fields[uuidIdx]||"").trim().replace(/^"|"$/g,"");
+    if (!uuid) { skipped++; continue; }
+
+    // Parse locations — must be separated by LOCATIONS_SEPARATOR
+    let locations = [];
+    if (locsIdx !== -1) {
+      const rawLocs = (fields[locsIdx]||"").trim().replace(/^"|"$/g,"");
+      if (rawLocs) {
+        // Validate format — must use " | " separator (or be a single value with no separator)
+        if (rawLocs.includes("|") && !rawLocs.includes(LOCATIONS_SEPARATOR.trim())) {
+          errors.push({
+            row: i+1,
+            value: rawLocs,
+            message: `Invalid locations format on row ${i+1}. Found: "${rawLocs}". Use " | " (space-pipe-space) to separate multiple locations. Example: "PROGRAM (Team Affinity) | MARKET"`,
+          });
+          skipped++;
+          continue;
+        }
+        locations = rawLocs.includes(LOCATIONS_SEPARATOR)
+          ? rawLocs.split(LOCATIONS_SEPARATOR).map(l=>l.trim()).filter(Boolean)
+          : rawLocs ? [rawLocs] : [];
+      }
+    }
+
+    const isSellable = sellableIdx !== -1
+      ? (fields[sellableIdx]||"").trim().toLowerCase() === "true"
+      : locations.some(l=>l.toUpperCase().includes("MARKET")||l.toUpperCase().includes("EXCHANGE"));
+
+    cards.push({
+      uuid,
+      name:      nameIdx     !== -1 ? (fields[nameIdx]||"").trim().replace(/^"|"$/g,"")    : "",
+      position:  posIdx      !== -1 ? (fields[posIdx]||"").trim().replace(/^"|"$/g,"")     : "",
+      team:      teamIdx     !== -1 ? (fields[teamIdx]||"").trim().replace(/^"|"$/g,"")    : "",
+      rarity:    rarityIdx   !== -1 ? (fields[rarityIdx]||"").trim().replace(/^"|"$/g,"")  : "",
+      ovr:       ovrIdx      !== -1 ? Number((fields[ovrIdx]||"0").trim())||0              : 0,
+      series:    seriesIdx   !== -1 ? (fields[seriesIdx]||"").trim().replace(/^"|"$/g,"")  : "",
+      locations,
+      isSellable,
+    });
+  }
+
+  return { ok:true, cards, errors, skipped };
+}
+
+function CSVTab({ allCards, collected, onImport, loadState, onItemsImported }) {
+  // ── Collection inventory state ──
+  const fileInputRef    = useRef();
+  const itemsFileRef    = useRef();
   const [dragOver,      setDragOver]      = useState(false);
-  const [importResult,  setImportResult]  = useState(null); // {ok, message, type}
-  const [pendingImport, setPendingImport] = useState(null); // parsed result waiting for confirm
+  const [itemsDragOver, setItemsDragOver] = useState(false);
+  const [importResult,  setImportResult]  = useState(null);
+  const [pendingImport, setPendingImport] = useState(null);
   const [parseStats,    setParseStats]    = useState(null);
+  // ── Items database state ──
+  const [itemsImportResult, setItemsImportResult] = useState(null);
+  const [itemsImporting,    setItemsImporting]    = useState(false);
+  const [activeSection,     setActiveSection]     = useState("inventory"); // "inventory"|"items"
 
   const totalCollected = Object.values(collected).filter(Boolean).length;
   const canExport = loadState === "done" && totalCollected > 0;
+  const totalItems = Object.values(allCards).reduce((a,c)=>a+c.length,0);
+  const canExportItems = totalItems > 0;
 
-  // Build a quick UUID→{name,seriesId} lookup from allCards
-  const cardLookup = useMemo(() => {
-    const map = {};
-    for (const series of SERIES_LIST) {
-      for (const card of (allCards[series.id]||[])) {
-        map[card.uuid] = { name: card.name, seriesId: series.id };
-      }
-    }
+  const cardLookup = useMemo(()=>{
+    const map={};
+    for(const series of SERIES_LIST)
+      for(const card of (allCards[series.id]||[]))
+        map[card.uuid]={name:card.name,seriesId:series.id};
     return map;
-  }, [allCards]);
+  },[allCards]);
 
+  // ── Collection inventory handlers ──
   const handleExport = () => {
-    if (!canExport) return;
-    const csv = buildCSV(collected, allCards);
-    downloadCSV(csv);
-    setImportResult({ ok:true, type:"ok", message:`✓ Exported ${totalCollected} collected cards to ${CSV_FILENAME}` });
+    if(!canExport) return;
+    downloadCSV(buildCSV(collected,allCards));
+    setImportResult({ok:true,type:"ok",message:`✓ Exported ${totalCollected} collected cards to ${CSV_FILENAME}`});
   };
 
-  const processFile = (file) => {
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setImportResult({ ok:false, type:"err", message:"Please select a .csv file." });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const result = parseCSV(text);
-      if (!result.ok) {
-        setImportResult({ ok:false, type:"err", message:`Import error: ${result.error}` });
-        return;
-      }
-      // Count how many UUIDs aren't in current card data
-      const unmatched = Object.keys(result.collected).filter(uuid => !cardLookup[uuid]).length;
-      const stats = {
-        count: result.count,
-        current: totalCollected,
-        skipped: result.skipped,
-        unmatched,
-        parsed: result.collected,
-      };
-      setParseStats(stats);
+  const processInventoryFile = (file) => {
+    if(!file) return;
+    if(!file.name.toLowerCase().endsWith(".csv")){ setImportResult({ok:false,type:"err",message:"Please select a .csv file."}); return; }
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const result=parseCSV(e.target.result);
+      if(!result.ok){ setImportResult({ok:false,type:"err",message:`Import error: ${result.error}`}); return; }
+      const unmatched=Object.keys(result.collected).filter(u=>!cardLookup[u]).length;
+      setParseStats({count:result.count,current:totalCollected,skipped:result.skipped,unmatched,parsed:result.collected});
       setPendingImport(result.collected);
       setImportResult(null);
     };
-    reader.onerror = () => setImportResult({ ok:false, type:"err", message:"Failed to read file." });
+    reader.onerror=()=>setImportResult({ok:false,type:"err",message:"Failed to read file."});
     reader.readAsText(file);
   };
 
-  const handleFileInput = (e) => {
-    processFile(e.target.files[0]);
-    e.target.value = ""; // reset so same file can be re-selected
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault(); setDragOver(false);
-    processFile(e.dataTransfer.files[0]);
-  };
-
-  const confirmImport = () => {
+  const confirmImport=()=>{
     onImport(pendingImport);
-    setImportResult({ ok:true, type:"ok", message:`✓ Imported ${parseStats.count} cards. Local storage replaced.${parseStats.unmatched>0 ? ` (${parseStats.unmatched} UUIDs not matched to current card data — still saved.)` : ""}` });
-    setPendingImport(null);
-    setParseStats(null);
+    setImportResult({ok:true,type:"ok",message:`✓ Imported ${parseStats.count} cards. Local storage replaced.${parseStats.unmatched>0?` (${parseStats.unmatched} UUIDs not in database — still saved.)`:""}` });
+    setPendingImport(null); setParseStats(null);
   };
 
-  // Sample of what CSV looks like
-  const sampleLines = [
-    "uuid,card_name,collection",
-    "a1b2c3d4e5f6...,Mike Trout,Spotlight",
-    "f6e5d4c3b2a1...,Shohei Ohtani,All-Star",
-    "…",
+  // ── Items database handlers ──
+  const handleExportItems = () => {
+    if(!canExportItems) return;
+    const csv = buildItemsCSV(allCards);
+    const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=ITEMS_CSV_FILENAME;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    setItemsImportResult({type:"ok",message:`✓ Exported ${totalItems} cards to ${ITEMS_CSV_FILENAME}`});
+  };
+
+  const processItemsFile = async (file) => {
+    if(!file) return;
+    if(!file.name.toLowerCase().endsWith(".csv")){ setItemsImportResult({type:"err",message:"Please select a .csv file."}); return; }
+    setItemsImporting(true);
+    setItemsImportResult(null);
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      const result=parseItemsCSV(e.target.result);
+      if(!result.ok){ setItemsImportResult({type:"err",message:result.error}); setItemsImporting(false); return; }
+
+      // Show location format errors before proceeding
+      if(result.errors.length>0){
+        const errMsgs = result.errors.slice(0,3).map(e=>e.message).join("\n");
+        const more = result.errors.length>3 ? `\n…and ${result.errors.length-3} more rows with the same issue.` : "";
+        setItemsImportResult({type:"err",message:`Location format errors found:\n\n${errMsgs}${more}\n\nCorrect format: use " | " (space-pipe-space) to separate multiple locations.\nExample: PROGRAM (Team Affinity) | MARKET`});
+        setItemsImporting(false); return;
+      }
+
+      if(result.cards.length===0){ setItemsImportResult({type:"warn",message:"No valid cards found in file."}); setItemsImporting(false); return; }
+
+      // POST cards to update-item endpoint one batch at a time
+      // We use the delete-cards wipe_all=false path — actually we call update-item for each
+      // For bulk import we call a special path on delete-cards with the full payload
+      // Since update-item only accepts one UUID at a time, we do it client-side via the store
+      // Instead: POST to a new import endpoint. Since we don't have one yet, we write directly
+      // via the existing update-item for each card (but that's too slow for bulk).
+      // Practical approach: send the entire parsed array to update-item with mode:"bulk"
+      // update-item.js already handles single cards — we'll call it per card in batches.
+
+      let updated=0, added=0, failed=0;
+      const BATCH=5;
+      for(let i=0;i<result.cards.length;i+=BATCH){
+        const batch=result.cards.slice(i,i+BATCH);
+        await Promise.all(batch.map(async card=>{
+          try{
+            const res=await fetch(API_UPDATE_ITEM,{
+              method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({uuid:card.uuid,cardData:card}),
+            });
+            const d=await res.json();
+            if(d.ok){ d.isNew?added++:updated++; } else failed++;
+          }catch{ failed++; }
+        }));
+        setItemsImportResult({type:"info",message:`Importing… ${Math.min(i+BATCH,result.cards.length)} / ${result.cards.length} cards`});
+      }
+      setItemsImportResult({type:"ok",message:`✓ Import complete: ${added} added, ${updated} updated, ${failed} failed out of ${result.cards.length} cards.`});
+      if(onItemsImported) onItemsImported();
+      setItemsImporting(false);
+    };
+    reader.onerror=()=>{ setItemsImportResult({type:"err",message:"Failed to read file."}); setItemsImporting(false); };
+    reader.readAsText(file);
+  };
+
+  const sampleInventory=["uuid,card_name,collection","a1b2c3…,Mike Trout,Spotlight","f6e5d4…,Shohei Ohtani,All-Star"].join("\n");
+  const sampleItems=[
+    "uuid,name,position,team,rarity,ovr,series,locations,isSellable",
+    "a1b2c3…,Mike Trout,CF,Angels,Diamond,99,Spotlight,PROGRAM (Spotlight) | MARKET,true",
   ].join("\n");
 
   return (
     <div className="page">
-      {pendingImport && parseStats && (
-        <ImportConfirmModal
-          stats={parseStats}
-          onConfirm={confirmImport}
-          onCancel={()=>{ setPendingImport(null); setParseStats(null); }}
-        />
+      {pendingImport&&parseStats&&(
+        <ImportConfirmModal stats={parseStats} onConfirm={confirmImport} onCancel={()=>{setPendingImport(null);setParseStats(null);}}/>
       )}
 
-      {/* Export */}
-      <div className="csv-section">
-        <h3>📤 Export Collection</h3>
-        <p>
-          Downloads a CSV of all cards you currently have checked. The file contains three columns:
-          <strong> uuid</strong>, <strong>card_name</strong>, and <strong>collection</strong>.
-          Share this file to sync your progress to another browser or device.
-        </p>
-        <div className="csv-meta">
-          <div className="csv-meta-chip"><span className="cm-label">Cards collected: </span><span className="cm-val">{totalCollected}</span></div>
-          <div className="csv-meta-chip"><span className="cm-label">File: </span><span className="cm-val">{CSV_FILENAME}</span></div>
-          <div className="csv-meta-chip"><span className="cm-label">Format: </span><span className="cm-val">uuid, card_name, collection</span></div>
-        </div>
-        <div className="csv-preview">{sampleLines}</div>
-        <button
-          className="btn btn-primary"
-          onClick={handleExport}
-          disabled={!canExport}
-          title={!canExport ? (loadState!=="done" ? "Load card data first" : "No cards collected yet") : ""}
-        >
-          {canExport ? `⬇ Export ${totalCollected} Cards to CSV` : loadState!=="done" ? "⬇ Export (load data first)" : "⬇ Export (no cards collected yet)"}
-        </button>
-        {loadState !== "done" && (
-          <div style={{fontSize:11,color:"var(--dim)",marginTop:8}}>
-            ⚠ Card data must be loaded before exporting. Card names and collection names require the card database to be populated.
+      {/* Section toggle */}
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        <button className={`pill ${activeSection==="inventory"?"active":""}`} onClick={()=>setActiveSection("inventory")}>🎴 Collection Inventory</button>
+        <button className={`pill ${activeSection==="items"?"active":""}`}     onClick={()=>setActiveSection("items")}>🗃 Card Database</button>
+      </div>
+
+      {/* ── COLLECTION INVENTORY SECTION ── */}
+      {activeSection==="inventory"&&(
+        <>
+          <div className="csv-section">
+            <h3>📤 Export Collection</h3>
+            <p>Downloads your checked cards as <strong>uuid, card_name, collection</strong>. Use to share collected status across devices.</p>
+            <div className="csv-meta">
+              <div className="csv-meta-chip"><span className="cm-label">Collected: </span><span className="cm-val">{totalCollected}</span></div>
+              <div className="csv-meta-chip"><span className="cm-label">File: </span><span className="cm-val">{CSV_FILENAME}</span></div>
+            </div>
+            <div className="csv-preview">{sampleInventory}</div>
+            <button className="btn btn-primary" onClick={handleExport} disabled={!canExport}>
+              {canExport?`⬇ Export ${totalCollected} Cards`:"⬇ Export (no cards collected yet)"}
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* Import */}
-      <div className="csv-section">
-        <h3>📥 Import Collection</h3>
-        <p>
-          Select or drop a previously exported CSV file. <strong>UUID is the only required field</strong> —
-          card_name and collection columns are ignored during import.
-          Importing <strong>completely replaces</strong> your current collection in local storage.
-        </p>
-
-        <div
-          className={`drop-zone ${dragOver?"drag-over":""}`}
-          onDragOver={e=>{ e.preventDefault(); setDragOver(true); }}
-          onDragLeave={()=>setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={()=>fileInputRef.current?.click()}
-        >
-          <div className="dz-icon">📂</div>
-          <div className="dz-title">Tap to select file, or drag and drop</div>
-          <div className="dz-sub">.csv files only · replaces entire collection</div>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden-file"
-          onChange={handleFileInput}
-        />
-
-        {importResult && (
-          <div className={`import-result ${importResult.type}`}>
-            {importResult.message}
+          <div className="csv-section">
+            <h3>📥 Import Collection</h3>
+            <p><strong>UUID is the only required field.</strong> Importing <strong>completely replaces</strong> your current collection in local storage. card_name and collection are ignored.</p>
+            <div className={`drop-zone ${dragOver?"drag-over":""}`}
+              onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
+              onDrop={e=>{e.preventDefault();setDragOver(false);processInventoryFile(e.dataTransfer.files[0]);}}
+              onClick={()=>fileInputRef.current?.click()}>
+              <div className="dz-icon">📂</div>
+              <div className="dz-title">Tap to select or drag & drop</div>
+              <div className="dz-sub">.csv only · replaces entire collection</div>
+            </div>
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden-file" onChange={e=>{processInventoryFile(e.target.files[0]);e.target.value="";}}/>
+            {importResult&&<div className={`import-result ${importResult.type}`}>{importResult.message}</div>}
           </div>
-        )}
-      </div>
 
-      {/* Notes */}
-      <div className="csv-section" style={{background:"transparent",border:"1px solid var(--border)"}}>
-        <h3 style={{color:"var(--dim)"}}>Notes</h3>
-        <p style={{marginBottom:0}}>
-          • The CSV only tracks which cards you've marked as collected (checkboxes). Collection include/exclude settings are not exported.<br/>
-          • UUIDs in the CSV that don't match any card in the current database are still saved — they'll activate if those cards are added later.<br/>
-          • To transfer to another browser: export on device A → share the .csv file → import on device B.<br/>
-          • The CSV is plain text and can be opened in Excel, Google Sheets, or any text editor.
-        </p>
-      </div>
+          <div className="csv-section" style={{background:"transparent",border:"1px solid var(--border)"}}>
+            <h3 style={{color:"var(--dim)"}}>Notes</h3>
+            <p style={{marginBottom:0,whiteSpace:"pre-line"}}>• Only checked cards are exported — unchecked cards are omitted.{"\n"}• UUIDs not in the current database are still saved and activate when that card is added.{"\n"}• To sync: export on device A → share file → import on device B.{"\n"}• Collection include/exclude checkboxes are not exported.</p>
+          </div>
+        </>
+      )}
+
+      {/* ── CARD DATABASE SECTION ── */}
+      {activeSection==="items"&&(
+        <>
+          <div className="csv-section">
+            <h3>📤 Export Card Database</h3>
+            <p>Exports all stored card records with full attributes. Columns: <strong>uuid, name, position, team, rarity, ovr, series, locations, isSellable</strong>.</p>
+            <div className="csv-meta">
+              <div className="csv-meta-chip"><span className="cm-label">Total cards: </span><span className="cm-val">{totalItems}</span></div>
+              <div className="csv-meta-chip"><span className="cm-label">File: </span><span className="cm-val">{ITEMS_CSV_FILENAME}</span></div>
+            </div>
+            <div className="csv-preview">{sampleItems}</div>
+            <button className="btn btn-primary" onClick={handleExportItems} disabled={!canExportItems}>
+              {canExportItems?`⬇ Export ${totalItems} Cards`:"⬇ Export (no card data loaded)"}
+            </button>
+          </div>
+
+          <div className="csv-section">
+            <h3>📥 Import Card Database</h3>
+            <p>Merges card records into the stored database. <strong>UUID is the primary key.</strong> Existing records are updated; new UUIDs are added. No records are deleted.</p>
+            <p style={{marginTop:6,fontSize:11,color:"var(--accent)"}}>⚠ Locations must use <strong>" | "</strong> (space-pipe-space) as the separator between multiple values. Example: <code style={{background:"#111",padding:"1px 4px",borderRadius:3,fontFamily:"monospace"}}>PROGRAM (Team Affinity) | MARKET</code></p>
+            <div className={`drop-zone ${itemsDragOver?"drag-over":""}`}
+              onDragOver={e=>{e.preventDefault();setItemsDragOver(true);}} onDragLeave={()=>setItemsDragOver(false)}
+              onDrop={e=>{e.preventDefault();setItemsDragOver(false);processItemsFile(e.dataTransfer.files[0]);}}
+              onClick={()=>!itemsImporting&&itemsFileRef.current?.click()}>
+              <div className="dz-icon">{itemsImporting?"⏳":"🗃"}</div>
+              <div className="dz-title">{itemsImporting?"Import in progress…":"Tap to select or drag & drop"}</div>
+              <div className="dz-sub">.csv only · merges with existing data</div>
+            </div>
+            <input ref={itemsFileRef} type="file" accept=".csv" className="hidden-file" onChange={e=>{processItemsFile(e.target.files[0]);e.target.value="";}}/>
+            {itemsImportResult&&(
+              <div className={`import-result ${itemsImportResult.type}`} style={{whiteSpace:"pre-wrap"}}>
+                {itemsImportResult.message}
+              </div>
+            )}
+          </div>
+
+          <div className="csv-section" style={{background:"transparent",border:"1px solid var(--border)"}}>
+            <h3 style={{color:"var(--dim)"}}>Notes</h3>
+            <p style={{marginBottom:0,whiteSpace:"pre-line"}}>• Import merges records — it never deletes. Use the collection delete buttons for removal.{"\n"}• The "series" column must exactly match a collection name (e.g. "All-Star", "Jolt").{"\n"}• Unrecognized series values are skipped — that card won't appear in any collection.{"\n"}• Locations separator must be " | " (space-pipe-space) for multi-value fields.{"\n"}• isSellable is auto-derived from locations if the column is missing or blank.</p>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -768,10 +917,13 @@ function App() {
   // Cache timestamps
   const [itemsTs,            setItemsTs]            = useState(null);
   const [listingsTs,         setListingsTs]         = useState(null);
-  const [itemsPhase,         setItemsPhase]         = useState(null);  // phase message during items refresh
+  const [itemsPhase,         setItemsPhase]         = useState(null);
   const [refreshingItems,    setRefreshingItems]    = useState(false);
   const [refreshingListings, setRefreshingListings] = useState(false);
+  const [cancelPending,      setCancelPending]      = useState(false);
+  const [itemsCancelled,     setItemsCancelled]     = useState(false);
   const [refreshMsg,         setRefreshMsg]         = useState(null);
+  const [showWipeConfirm,    setShowWipeConfirm]    = useState(false);
 
   const [collected,      setCollected]      = useState({});
   const [includedSeries, setIncludedSeries] = useState(()=>{ const m={}; SERIES_LIST.forEach(s=>m[s.id]=true); return m; });
@@ -797,14 +949,13 @@ function App() {
   const handleImport = useCallback(newCollected => { saveCollected(newCollected); }, [saveCollected]);
 
   // ── Merge items data + listings prices into allCards ──────────────────────
-  // itemsData shape (from Item API per UUID):
-  //   { [seriesId]: { cards: [{ uuid, name, position, team, rarity, locations[], isSellable }], totalInCollection, totalInDatabase } }
-  // listingsData shape (from Listings API):
-  //   { [seriesId]: { [uuid]: { sellPrice, buyPrice } } }
+  // itemsData shape: { [seriesId]: { cards: [...], totalInCollection, totalInDatabase } }
+  // listingsData shape: { [seriesId]: { [uuid]: { sellNowPrice, buyNowPrice } } }
   //
-  // Prices from listingsData are matched to cards by UUID.
-  // Cards in items but not in listings have $0 prices (program rewards).
-  // Cards in listings but not in items are added as market-only entries.
+  // Only cards present in the items blob are shown. Listing prices are overlaid
+  // by UUID. We deliberately do NOT create ghost rows for UUIDs that exist only
+  // in listings — those appear after a delete before the listings blob is cleaned,
+  // or before the items refresh has run for a new card.
   const mergeAndSet = useCallback((itemsData, listingsData) => {
     const result = {};
     for (const series of SERIES_LIST) {
@@ -812,35 +963,15 @@ function App() {
       const cards       = seriesItems?.cards || [];
       const prices      = listingsData?.[series.id] || {};
 
-      // Build UUID set for dedup check
-      const seenUUIDs = new Set();
-
       const merged = cards.map(card => {
-        seenUUIDs.add(card.uuid);
         const p = prices[card.uuid] || {};
         return {
           ...card,
-          // sellNowPrice = what sellers are asking = cost to you to acquire the card now
-          // buyNowPrice  = what buyers are offering = revenue if you sell now
           sellNowPrice: p.sellNowPrice || 0,
           buyNowPrice:  p.buyNowPrice  || 0,
           seriesId:     series.id,
         };
       });
-
-      // Add any listings-only cards (appear in market but not in Item API results)
-      // These get no location data but are still valid collection cards
-      for (const [uuid, p] of Object.entries(prices)) {
-        if (!seenUUIDs.has(uuid)) {
-          merged.push({
-            uuid, name:uuid, position:"", team:"", rarity:"",
-            locations:["Community Market"], isSellable:true,
-            sellNowPrice: p.sellNowPrice || 0,
-            buyNowPrice:  p.buyNowPrice  || 0,
-            seriesId: series.id,
-          });
-        }
-      }
 
       result[series.id] = merged;
     }
@@ -970,9 +1101,19 @@ function App() {
           ? cache.itemsRefreshing
           : cache.listingsRefreshing;
 
-        // Update phase message while items refresh is in progress
-        if (type === "items" && cache.itemsPhase) {
-          setItemsPhase(cache.itemsPhase);
+        if (type === "items") {
+          if (cache.itemsPhase)    setItemsPhase(cache.itemsPhase);
+          if (cache.cancelPending) setCancelPending(true);
+          // Detect if the function stopped due to cancellation
+          if (cache.itemsCancelled && !cache.itemsRefreshing) {
+            clearInterval(pollIntervalRef.current[type]);
+            setRefreshingItems(false);
+            setCancelPending(false);
+            setItemsPhase(null);
+            setRefreshMsg({ text:"🛑 Refresh stopped. Progress saved — click Refresh Cards to resume.", type:"warn" });
+            await loadFromCache();
+            return;
+          }
         }
 
         const newTs = type === "items"
@@ -1061,7 +1202,32 @@ function App() {
     startPolling("listings", previousTs);
   }, [listingsTs, startPolling]);
 
-  // ── Diagnostics ──────────────────────────────────────────────────────────
+  const handleCancelRefresh = useCallback(async () => {
+    setCancelPending(true);
+    try {
+      await fetch(API_CANCEL_REFRESH, { method:"POST" });
+      setRefreshMsg({ text:"🛑 Stop signal sent — refresh will halt before the next batch. Progress is saved.", type:"warn" });
+    } catch(e) {
+      setRefreshMsg({ text:`✗ Could not send stop signal: ${e.message}`, type:"err" });
+    }
+    // Don't clear refreshingItems yet — polling will detect when the function actually stops
+  }, []);
+
+  const handleWipeAll = useCallback(async () => {
+    setShowWipeConfirm(false);
+    try {
+      const res = await fetch(API_DELETE_CARDS, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({wipe_all:true}) });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error||"Wipe failed");
+      setRefreshMsg({ text:"✓ All card data wiped. Click Refresh Cards to repopulate.", type:"ok" });
+      setAllCards({});
+      setItemsTs(null);
+      setListingsTs(null);
+      setLoadState("idle");
+    } catch(e) {
+      setRefreshMsg({ text:`✗ Wipe failed: ${e.message}`, type:"err" });
+    }
+  }, []);
   const runDiag = useCallback(async () => {
     setDiagRunning(true);
     const lines=[], results=[];
@@ -1174,6 +1340,21 @@ function App() {
         />
       )}
 
+      {/* Wipe confirmation modal */}
+      {showWipeConfirm && (
+        <div className="modal-overlay" onClick={e=>{ if(e.target===e.currentTarget) setShowWipeConfirm(false); }}>
+          <div className="confirm-box">
+            <h2>⚠️ Wipe All Card Data?</h2>
+            <p>This will permanently delete <strong>all stored card information</strong> from the server cache — items, prices, checkpoints, and status. Your personal collected inventory (checkboxes) is not affected.</p>
+            <p style={{marginTop:8,color:"var(--accent)",fontSize:12}}>You will need to run a full Refresh Cards after this to repopulate.</p>
+            <div className="btn-row" style={{marginTop:16}}>
+              <button className="btn btn-danger" onClick={handleWipeAll}>Wipe All Card Data</button>
+              <button className="btn btn-secondary" onClick={()=>setShowWipeConfirm(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="app-header">
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
@@ -1182,10 +1363,16 @@ function App() {
             <h1>⚾ Miguel Cabrera Collection Tracker</h1>
             <div className="sub">99 OVR Milestone · Requires 21 of 22 sub-collections</div>
           </div>
-          <button
-            onClick={()=>{ setShowModal(true); if(diagResults.length===0) runDiag(); }}
-            style={{background:"none",border:"none",color:"var(--dim)",cursor:"pointer",fontSize:11,fontFamily:"inherit",textDecoration:"underline",whiteSpace:"nowrap",paddingTop:4,flexShrink:0}}
-          >🔧 Troubleshoot</button>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,paddingTop:4,flexShrink:0}}>
+            <button
+              onClick={()=>{ setShowModal(true); if(diagResults.length===0) runDiag(); }}
+              style={{background:"none",border:"none",color:"var(--dim)",cursor:"pointer",fontSize:11,fontFamily:"inherit",textDecoration:"underline",whiteSpace:"nowrap"}}
+            >🔧 Troubleshoot</button>
+            <button
+              onClick={()=>setShowWipeConfirm(true)}
+              style={{background:"none",border:"none",color:"#7f1d1d",cursor:"pointer",fontSize:10,fontFamily:"inherit",textDecoration:"underline",whiteSpace:"nowrap"}}
+            >🗑 Wipe Card Data</button>
+          </div>
         </div>
         <div className="header-stats">
           <div className="stat-box"><div className="stat-label">Cards Collected</div><div className="stat-value" style={{color:"var(--green)"}}>{totalCollected}</div></div>
@@ -1212,22 +1399,26 @@ function App() {
             <div className={`refresh-ts ${refreshingItems?"ok":tsClass(itemsTs)}`}>
               {refreshingItems
                 ? (itemsPhase || "Updating in background…")
-                : itemsTs ? `Updated: ${fmtTs(itemsTs)}` : "No data yet"}
+                : itemsCancelled
+                  ? "Stopped — click Refresh Cards to resume"
+                  : itemsTs ? `Updated: ${fmtTs(itemsTs)}` : "No data yet"}
             </div>
           </div>
-          <div style={{marginTop:4}}>
-            <button
-              className="refresh-btn"
-              onClick={handleRefreshItems}
-              disabled={refreshingItems}
-              title={refreshingItems?"Refresh already in progress":"Fetch full card database from TheShow.com (may take several minutes)"}
-            >
-              {refreshingItems
-                ? <><span className="spin-sm"/> In progress…</>
-                : "🔄 Refresh Cards"}
+          <div style={{marginTop:4,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <button className="refresh-btn" onClick={handleRefreshItems} disabled={refreshingItems}
+              title={refreshingItems?"Refresh already in progress":"Fetch full card database from TheShow.com"}>
+              {refreshingItems ? <><span className="spin-sm"/> In progress…</> : "🔄 Refresh Cards"}
             </button>
-            <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes weekly on Sundays at 2 AM Pacific</div>
+            {refreshingItems && (
+              <button onClick={handleCancelRefresh} disabled={cancelPending}
+                style={{background:"none",border:"none",color:cancelPending?"var(--dim)":"var(--red)",
+                  cursor:cancelPending?"not-allowed":"pointer",fontSize:11,fontFamily:"inherit",
+                  textDecoration:"underline",padding:0}}>
+                {cancelPending ? "⏳ Stop signal sent…" : "⛔ Stop Process"}
+              </button>
+            )}
           </div>
+          <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>Auto-refreshes weekly on Sundays at 2 AM Pacific</div>
         </div>
 
         <div className="refresh-divider"/>
