@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#0a0e1a" />
-  <title>⚾ Cabrera Collection Tracker — MLB The Show 26</title>
+  <title>⚾ V-Mart Collection Tracker — MLB The Show 26</title>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -258,30 +258,40 @@ function parseProxyResponse(text, i) {
   return JSON.parse(text);
 }
 
+// Victor Martinez Legends & Flashbacks collection — 26 series, 24 required.
+// IDs marked with a comment are placeholders pending real series_ids from the
+// metadata API (Cityscapes, Mural, Vintage are new series for this collection).
 const SERIES_LIST = [
   { id:"10028", name:"World Baseball Classic", required:142 },
-  { id:"10004", name:"All-Star",               required:39  },
-  { id:"10046", name:"Jolt",                   required:30  },
-  { id:"10035", name:"The Negro Leagues",       required:27  },
-  { id:"10017", name:"Topps Now",              required:24  },
+  { id:"10047", name:"Spotlight",              required:70  },
+  { id:"10017", name:"Topps Now",              required:63  },
+  { id:"10004", name:"All-Star",               required:45  },
+  { id:"10005", name:"Awards",                 required:32  },
+  { id:"10035", name:"The Negro Leagues",       required:31  },
+  { id:"90001", name:"Cityscapes",             required:30  }, // placeholder ID
+  { id:"10046", name:"Jolt",                   required:40  },
+  { id:"90002", name:"Mural",                  required:29  }, // placeholder ID
+  { id:"90003", name:"Vintage",                required:27  }, // placeholder ID
   { id:"10050", name:"New Threads",            required:23  },
-  { id:"10044", name:"Contributor",            required:18  },
-  { id:"10005", name:"Awards",                 required:18  },
-  { id:"10002", name:"Breakout",               required:17  },
+  { id:"10044", name:"Contributor",            required:19  },
+  { id:"10002", name:"Breakout",               required:18  },
+  { id:"10020", name:"2nd Half Heroes",        required:18  },
+  { id:"10043", name:"Egg Hunt",               required:17  },
   { id:"10039", name:"Spring Breakout",        required:16  },
-  { id:"10020", name:"2nd Half Heroes",        required:15  },
-  { id:"10043", name:"Egg Hunt",               required:15  },
-  { id:"10047", name:"Spotlight",              required:12  },
-  { id:"10003", name:"Veteran",                required:11  },
-  { id:"10006", name:"Postseason",             required:9   },
+  { id:"10006", name:"Postseason",             required:12  },
+  { id:"10003", name:"Veteran",                required:12  },
+  { id:"10022", name:"Milestone",              required:9   },
+  { id:"10034", name:"Standout",               required:8   },
   { id:"10062", name:"St. Patrick's Day",      required:8   },
-  { id:"10001", name:"Rookie",                 required:6   },
-  { id:"10068", name:"Mexico City Series",     required:4   },
-  { id:"10034", name:"Standout",               required:3   },
-  { id:"10049", name:"Cornerstone",            required:2   },
-  { id:"10022", name:"Milestone",              required:2   },
-  { id:"10045", name:"Last Ride",              required:1   },
+  { id:"10001", name:"Rookie",                 required:7   },
+  { id:"10049", name:"Cornerstone",            required:4   },
+  { id:"10045", name:"Last Ride",              required:2   },
+  { id:"10013", name:"Prime",                  required:2   },
+  { id:"10009", name:"Signature",              required:1   },
 ];
+
+const TOTAL_SERIES_COUNT    = 26;
+const REQUIRED_SERIES_COUNT = 24;
 
 const SERIES_NAME = Object.fromEntries(SERIES_LIST.map(s => [s.id, s.name]));
 
@@ -306,7 +316,6 @@ const SOURCE_HINTS = {
   "10020":"2nd Half Heroes Program / Community Market",
   "10043":"Egg Hunt Event / Community Market",
   "10047":"Spotlight Program / Community Market",
-  "10068":"Mexico City Series Pack / Community Market",
   "10034":"Standout Program / Community Market",
 };
 
@@ -594,7 +603,7 @@ const LOCATIONS_SEPARATOR = " | "; // consistent separator for locations array i
 
 function buildItemsCSV(allCards, otherCards) {
   const rows = [ITEMS_CSV_HEADERS.join(",")];
-  // Cabrera series
+  // Victor Martinez series
   for (const series of SERIES_LIST) {
     for (const card of (allCards[series.id]||[])) {
       const locs = Array.isArray(card.locations) ? card.locations.join(LOCATIONS_SEPARATOR) : (card.locations||"");
@@ -918,8 +927,8 @@ function CSVTab({ allCards, otherCards={}, collected, onImport, loadState, onIte
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App() {
-  const [allCards,       setAllCards]       = useState({});  // { [seriesId]: Card[] } — Cabrera series
-  const [otherCards,     setOtherCards]     = useState({});  // { [seriesName]: Card[] } — non-Cabrera
+  const [allCards,       setAllCards]       = useState({});  // { [seriesId]: Card[] } — Victor Martinez series
+  const [otherCards,     setOtherCards]     = useState({});  // { [seriesName]: Card[] } — non-V-Mart
   const [seriesMeta,     setSeriesMeta]     = useState([]); // from meta API via items blob
   const [manifestInfo,   setManifestInfo]   = useState(null); // integrity check
   const [loadState,      setLoadState]      = useState("idle");
@@ -971,7 +980,7 @@ function App() {
     const listingsData = cache.listings?.data      || {};
     const meta         = cache.items?.seriesMeta   || [];
 
-    // Build allCards — Cabrera series only, prices overlaid by UUID
+    // Build allCards — Victor Martinez series only, prices overlaid by UUID
     const result = {};
     for (const series of SERIES_LIST) {
       const seriesData = cabData[series.id];
@@ -979,8 +988,7 @@ function App() {
       const prices     = listingsData[series.id] || {};
       result[series.id] = cards.map(card => ({
         ...card,
-        // Display name fix: "Mexico City" → "Mexico City Series"
-        seriesDisplayName: card.series === "Mexico City" ? "Mexico City Series" : card.series,
+        seriesDisplayName: card.series,
         sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
         buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
         seriesId: series.id,
@@ -988,7 +996,7 @@ function App() {
     }
     setAllCards(result);
 
-    // Build otherCards — non-Cabrera series, prices overlaid where available
+    // Build otherCards — non-V-Mart series, prices overlaid where available
     const otherResult = {};
     for (const [seriesName, sd] of Object.entries(otherData)) {
       const seriesId = meta.find(s=>s.name===seriesName)?.series_id;
@@ -1102,7 +1110,7 @@ function App() {
             setItemsPhase(null);
             setItemsPct(100);
             setItemsTs(newTs);
-            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCabreraCards||0} Cabrera cards + ${cache.items?.totalOtherCards||0} other cards across ${cache.items?.totalPages||0} pages`, type:"ok" });
+            setRefreshMsg({ text:`✓ Card database updated — ${cache.items?.totalCabreraCards||0} V-Mart cards + ${cache.items?.totalOtherCards||0} other cards across ${cache.items?.totalPages||0} pages`, type:"ok" });
           } else {
             setRefreshingListings(false);
             setListingsTs(newTs);
@@ -1281,10 +1289,10 @@ function App() {
     };
   }),[allCards,collected]);
 
-  const cabreraTotal=useMemo(()=>{
+  const vmartTotal=useMemo(()=>{
     const inc=seriesStats.filter(s=>includedSeries[s.id]);
-    if(inc.length<=21) return{low:inc.reduce((a,s)=>a+s.lowCost,0),high:inc.reduce((a,s)=>a+s.highCost,0),count:inc.length};
-    const sorted=[...inc].sort((a,b)=>a.lowCost-b.lowCost).slice(0,21);
+    if(inc.length<=REQUIRED_SERIES_COUNT) return{low:inc.reduce((a,s)=>a+s.lowCost,0),high:inc.reduce((a,s)=>a+s.highCost,0),count:inc.length};
+    const sorted=[...inc].sort((a,b)=>a.lowCost-b.lowCost).slice(0,REQUIRED_SERIES_COUNT);
     return{low:sorted.reduce((a,s)=>a+s.lowCost,0),high:sorted.reduce((a,s)=>a+s.highCost,0),count:inc.length};
   },[seriesStats,includedSeries]);
 
@@ -1298,8 +1306,8 @@ function App() {
     const totOther=Object.values(otherCards).reduce((a,c)=>a+c.length,0);
     const m=fetchMethod?` · ${fetchMethod}`:"";
     const incomplete=manifestInfo&&!manifestInfo.complete;
-    if(incomplete) return{dot:"dot-warn",text:`${totCab} Cabrera + ${totOther} other cards${m} · ⚠ incomplete (${manifestInfo.completedPages}/${manifestInfo.expectedPages} pages)`};
-    return{dot:"dot-ok",text:`${totCab} Cabrera + ${totOther} other cards${m}`};
+    if(incomplete) return{dot:"dot-warn",text:`${totCab} V-Mart + ${totOther} other cards${m} · ⚠ incomplete (${manifestInfo.completedPages}/${manifestInfo.expectedPages} pages)`};
+    return{dot:"dot-ok",text:`${totCab} V-Mart + ${totOther} other cards${m}`};
   })();
 
   // ── Timestamp display helpers ─────────────────────────────────────────────
@@ -1336,8 +1344,8 @@ function App() {
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
           <div>
             <div className="eyebrow">MLB The Show 26 · Diamond Dynasty</div>
-            <h1>⚾ Miguel Cabrera Collection Tracker</h1>
-            <div className="sub">99 OVR Milestone · Requires 21 of 22 sub-collections</div>
+            <h1>⚾ Victor Martinez Collection Tracker</h1>
+            <div className="sub">99 OVR Milestone · Requires 24 of 26 sub-collections</div>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,paddingTop:4,flexShrink:0}}>
             <button
@@ -1352,8 +1360,8 @@ function App() {
         </div>
         <div className="header-stats">
           <div className="stat-box"><div className="stat-label">Cards Collected</div><div className="stat-value" style={{color:"var(--green)"}}>{totalCollected}</div></div>
-          <div className="stat-box"><div className="stat-label">Included</div><div className="stat-value" style={{color:"var(--accent)"}}>{cabreraTotal.count}/22</div></div>
-          <div className="stat-box"><div className="stat-label">Est. Low Cost</div><div className="stat-value" style={{color:"var(--blue)"}}>{cabreraTotal.low>0?`${(cabreraTotal.low/1000).toFixed(0)}K`:"—"}<span style={{fontSize:10}}> stubs</span></div></div>
+          <div className="stat-box"><div className="stat-label">Included</div><div className="stat-value" style={{color:"var(--accent)"}}>{vmartTotal.count}/{TOTAL_SERIES_COUNT}</div></div>
+          <div className="stat-box"><div className="stat-label">Est. Low Cost</div><div className="stat-value" style={{color:"var(--blue)"}}>{vmartTotal.low>0?`${(vmartTotal.low/1000).toFixed(0)}K`:"—"}<span style={{fontSize:10}}> stubs</span></div></div>
         </div>
       </div>
 
@@ -1483,15 +1491,15 @@ function App() {
         <div className="page">
           <div className="cabrera-banner">
             <div className="eyebrow">Collection Goal</div>
-            <h2>99 OVR Milestone Miguel Cabrera</h2>
-            <div className="note">Check exactly 21 of 22 collections · Uncheck one to skip it</div>
+            <h2>99 OVR Milestone Victor Martinez</h2>
+            <div className="note">Check exactly 24 of 26 collections · Uncheck two to skip them</div>
             <div className="cabrera-costs">
-              <div><div className="cost-label">Low Cost</div><div className="cost-value" style={{color:"var(--green)"}}>{cabreraTotal.low.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
-              <div><div className="cost-label">High Cost</div><div className="cost-value" style={{color:"var(--red)"}}>{cabreraTotal.high.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
+              <div><div className="cost-label">Low Cost</div><div className="cost-value" style={{color:"var(--green)"}}>{vmartTotal.low.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
+              <div><div className="cost-label">High Cost</div><div className="cost-value" style={{color:"var(--red)"}}>{vmartTotal.high.toLocaleString()}</div><div className="cost-unit">stubs</div></div>
             </div>
           </div>
-          {cabreraTotal.count>21&&<div className="alert alert-warn">⚠️ {cabreraTotal.count} checked — only 21 needed. Totals show cheapest 21. Uncheck one to exclude it manually.</div>}
-          {cabreraTotal.count<21&&<div className="alert alert-err">⚠️ Only {cabreraTotal.count} checked — need at least 21.</div>}
+          {vmartTotal.count>REQUIRED_SERIES_COUNT&&<div className="alert alert-warn">⚠️ {vmartTotal.count} checked — only {REQUIRED_SERIES_COUNT} needed. Totals show cheapest {REQUIRED_SERIES_COUNT}. Uncheck extras to exclude them manually.</div>}
+          {vmartTotal.count<REQUIRED_SERIES_COUNT&&<div className="alert alert-err">⚠️ Only {vmartTotal.count} checked — need at least {REQUIRED_SERIES_COUNT}.</div>}
           <div style={{fontSize:10,color:"var(--dim)",marginTop:8,lineHeight:1.7,padding:"0 2px"}}>
             <strong style={{color:"var(--dim)"}}>Mkt</strong> = cards currently listed on the Community Market for this series &nbsp;·&nbsp;
             <strong style={{color:"var(--dim)"}}>⚠</strong> = market count differs from required count (some cards may be program-only or not yet listed) &nbsp;·&nbsp;
@@ -1537,14 +1545,14 @@ function App() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={2} className="left" style={{color:"var(--accent)"}}>🏆 MIGUEL CABRERA (21/22)</td>
-                  <td className="center">21</td>
+                  <td colSpan={2} className="left" style={{color:"var(--accent)"}}>🏆 VICTOR MARTINEZ ({REQUIRED_SERIES_COUNT}/{TOTAL_SERIES_COUNT})</td>
+                  <td className="center">{REQUIRED_SERIES_COUNT}</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td></td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
-                  <td className="right" style={{color:"var(--green)"}}>{cabreraTotal.low.toLocaleString()}</td>
-                  <td className="right" style={{color:"var(--red)"}}>{cabreraTotal.high.toLocaleString()}</td>
+                  <td className="right" style={{color:"var(--green)"}}>{vmartTotal.low.toLocaleString()}</td>
+                  <td className="right" style={{color:"var(--red)"}}>{vmartTotal.high.toLocaleString()}</td>
                   <td colSpan={2}></td>
                 </tr>
               </tfoot>
@@ -1743,9 +1751,9 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
         </div>
       )}
 
-      {/* Cabrera series pills */}
+      {/* V-Mart series pills */}
       <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:"var(--accent)",marginBottom:6}}>
-        Cabrera Collections
+        Victor Martinez Collections
       </div>
       <div className="pill-row">
         {SERIES_LIST.map(s=>(
@@ -1760,7 +1768,7 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
       {Object.keys(otherCards).length > 0 && (
         <>
           <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:"var(--dim)",margin:"10px 0 6px"}}>
-            Other Series (not part of Cabrera collection)
+            Other Series (not part of Victor Martinez collection)
           </div>
           <div className="pill-row" style={{marginBottom:12}}>
             {Object.keys(otherCards).sort().map(seriesName=>(
@@ -1785,7 +1793,7 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
             </div>
           </div>
 
-          {/* Collection-level actions — Cabrera series only */}
+          {/* Collection-level actions — Victor Martinez series only */}
           {!isOtherSeries && (
             <div className="collection-actions">
               <span className="ca-label">Collection:</span>
@@ -1802,7 +1810,7 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
           )}
           {isOtherSeries && (
             <div style={{fontSize:11,color:"var(--dim)",marginBottom:8,padding:"6px 10px",background:"var(--surface2)",borderRadius:6}}>
-              ℹ This series is not part of the Cabrera collection. Cards are shown for reference only.
+              ℹ This series is not part of the Victor Martinez collection. Cards are shown for reference only.
             </div>
           )}
 
