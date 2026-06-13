@@ -985,7 +985,17 @@ function App() {
     for (const series of SERIES_LIST) {
       const seriesData = cabData[series.id];
       const cards      = seriesData?.cards || [];
-      const prices     = listingsData[series.id] || {};
+
+      // Resolve the series_id to use for price lookup. If series.id is a
+      // placeholder (90001-90003 for Cityscapes/Mural/Vintage), try to find
+      // the real series_id from seriesMeta by matching the series name.
+      let priceLookupId = series.id;
+      if (series.id.startsWith("9000")) {
+        const realId = meta.find(s=>s.name===series.name)?.series_id;
+        if (realId !== undefined) priceLookupId = String(realId);
+      }
+
+      const prices = listingsData[priceLookupId] || {};
       result[series.id] = cards.map(card => ({
         ...card,
         seriesDisplayName: card.series,
@@ -1567,7 +1577,7 @@ function App() {
           allCards={allCards} otherCards={otherCards} collected={collected} saveCollected={saveCollected}
           activeSeries={activeSeries} setActiveSeries={setActiveSeries}
           searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-          seriesStats={seriesStats}
+          seriesStats={seriesStats} seriesMeta={seriesMeta}
           onDataChanged={loadFromCache}
         />
       )}
@@ -1598,7 +1608,7 @@ function App() {
 }
 
 // ── CardsTab Component ────────────────────────────────────────────────────────
-function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSeries, setActiveSeries, searchQuery, setSearchQuery, seriesStats, onDataChanged }) {
+function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSeries, setActiveSeries, searchQuery, setSearchQuery, seriesStats, seriesMeta=[], onDataChanged }) {
   const [confirmDelete,    setConfirmDelete]    = useState(null); // {type:"card"|"collection", card?, series}
   const [confirmListings,  setConfirmListings]  = useState(null); // series name
   const [actionMsg,        setActionMsg]        = useState(null); // {text,type}
@@ -1682,11 +1692,23 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
   };
 
   // Refresh listings for entire collection
+  // Resolve a series_id for the Listings API. SERIES_LIST entries for
+  // Cityscapes/Mural/Vintage use placeholder ids (90001-90003) since their
+  // real ids weren't known when the collection was defined. If seriesMeta
+  // has since resolved a real id for that series name, use it instead.
+  const resolveSeriesId = (seriesId) => {
+    if (!seriesId.startsWith("9000")) return seriesId;
+    const name = SERIES_LIST.find(s=>s.id===seriesId)?.name;
+    const real = seriesMeta.find(s=>s.name===name)?.series_id;
+    return real !== undefined ? String(real) : seriesId;
+  };
+
   const doRefreshCollectionListings = async () => {
     setConfirmListings(null);
     setRefreshingSeries(true);
     try {
-      const res = await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({series_id:activeSeries}) });
+      const resolvedId = resolveSeriesId(activeSeries);
+      const res = await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({series_id:resolvedId}) });
       const d = await res.json();
       if (!d.ok) throw new Error(d.error||"Refresh failed");
       showMsg(`✓ Refreshed prices for ${d.count} cards in ${SERIES_LIST.find(s=>s.id===activeSeries)?.name}`);
@@ -1699,8 +1721,9 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
   const doRefreshCard = async (card) => {
     setRefreshingCard(card.uuid);
     try {
+      const resolvedId = resolveSeriesId(activeSeries);
       // Refresh listing price
-      await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid, series_id:activeSeries}) });
+      await fetch(API_REFRESH_LISTING_SINGLE, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid, series_id:resolvedId}) });
       // Refresh item detail (also updates name if it was a UUID placeholder)
       await fetch(API_UPDATE_ITEM, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({uuid:card.uuid}) });
       onDataChanged();
