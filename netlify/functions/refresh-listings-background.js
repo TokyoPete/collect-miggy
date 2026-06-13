@@ -1,11 +1,16 @@
 // netlify/functions/refresh-listings-background.js
 // Scheduled: 6 AM Pacific (14:00 UTC PDT).
-// Fetches market prices for ALL series found in the items blob
-// (both Cabrera and other series), keyed by series_id.
+// Fetches market prices for ALL series the game currently has (V-Mart
+// collection series AND "other" series), keyed by series_id.
 // HTTP equivalent: refresh-listings-http.js
 
 import { getStore } from "@netlify/blobs";
-import { BASE, CABRERA_SERIES } from "./_shared.js";
+import { BASE, VMART_SERIES } from "./_shared.js";
+
+// Placeholder series_ids used in _shared.js for series whose real IDs were
+// unknown at write time (Cityscapes, Mural, Vintage). These are never valid
+// Listings API series_ids — skip them unless seriesMeta resolves a real ID.
+const PLACEHOLDER_ID_PREFIX = "9000";
 
 async function fetchSeriesPrices(seriesId) {
   const prices = {};
@@ -34,25 +39,41 @@ async function fetchSeriesPrices(seriesId) {
 }
 
 // Build the full list of series to refresh:
-//   1. Always include all 22 Cabrera series (hardcoded IDs)
-//   2. Also include any "other" series found in the items blob (using seriesMeta)
+//   1. Start with seriesMeta from the items blob — this is the live, authoritative
+//      list of every series currently in the game (V-Mart series AND "other" series),
+//      with REAL series_ids straight from the metadata API.
+//   2. Layer in VMART_SERIES for any V-Mart series not yet present in seriesMeta,
+//      but SKIP placeholder ids (90001-90003) — those aren't valid Listings IDs.
+//      If seriesMeta has since resolved a real id for that series name, use it.
 async function buildSeriesList(store) {
   const seriesMap = {}; // { id: name }
+  const nameToRealId = {}; // { seriesName: realId } from seriesMeta
 
-  // Always include Cabrera series
-  for (const [name, id] of Object.entries(CABRERA_SERIES)) {
-    seriesMap[id] = name;
-  }
-
-  // Pull "other" series from the items blob's seriesMeta
+  // Step 1: pull every series from seriesMeta (real ids, covers V-Mart + other)
   try {
     const items = await store.get("items", { type:"json" }).catch(() => null);
     for (const s of items?.seriesMeta || []) {
-      if (s.series_id && s.series_id !== -1 && !seriesMap[String(s.series_id)]) {
-        seriesMap[String(s.series_id)] = s.name;
-      }
+      if (s.series_id === undefined || s.series_id === -1 || !s.name) continue;
+      const id = String(s.series_id);
+      seriesMap[id] = s.name;
+      nameToRealId[s.name] = id;
     }
   } catch {}
+
+  // Step 2: add any V-Mart series missing from seriesMeta
+  for (const [name, id] of Object.entries(VMART_SERIES)) {
+    const isPlaceholder = id.startsWith(PLACEHOLDER_ID_PREFIX);
+
+    if (isPlaceholder) {
+      // Use the real id from seriesMeta if it's been resolved by now
+      const realId = nameToRealId[name];
+      if (realId && !seriesMap[realId]) seriesMap[realId] = name;
+      // If no real id is known yet, skip — placeholder ids are not callable
+      continue;
+    }
+
+    if (!seriesMap[id]) seriesMap[id] = name;
+  }
 
   return Object.entries(seriesMap).map(([id, name]) => ({ id, name }));
 }
