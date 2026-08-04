@@ -987,36 +987,37 @@ function App() {
   // New items blob shape:
   //   cabData:   { [series_id]: { cards[], totalInCollection, totalInDatabase } }
   //   otherData: { [series_name]: { cards[], totalInDatabase } }
-  // listingsData: { [series_id]: { [uuid]: { sellNowPrice, buyNowPrice } } }
+  // prices:    flat { [uuid]: { sellNowPrice, buyNowPrice } }
   const mergeAndSet = useCallback((cache) => {
-    const cabData      = cache.items?.cabData      || {};
-    const otherData    = cache.items?.otherData    || {};
-    const listingsData = cache.listings?.data      || {};
-    const meta         = cache.items?.seriesMeta   || [];
+    const cabData   = cache.items?.cabData    || {};
+    const otherData = cache.items?.otherData  || {};
+    const meta      = cache.items?.seriesMeta || [];
 
-    // Build allCards — Carlos Beltran series only, prices overlaid by UUID
+    // Prices are a flat uuid -> { sellNowPrice, buyNowPrice } map, so series ids
+    // play no part in pricing. Series with placeholder ids get priced correctly.
+    // Legacy blobs stored prices nested under series ids — flatten those so the
+    // app works before the next listings refresh writes the new shape.
+    let priceByUuid = cache.listings?.prices || null;
+    if (!priceByUuid) {
+      priceByUuid = {};
+      for (const bySeries of Object.values(cache.listings?.data || {})) {
+        for (const [uuid, p] of Object.entries(bySeries || {})) priceByUuid[uuid] = p;
+      }
+    }
+
+    const priced = (card, seriesId) => ({
+      ...card,
+      seriesDisplayName: card.series,
+      sellNowPrice: priceByUuid[card.uuid]?.sellNowPrice || 0,
+      buyNowPrice:  priceByUuid[card.uuid]?.buyNowPrice  || 0,
+      seriesId,
+    });
+
+    // Build allCards — Carlos Beltran series only
     const result = {};
     for (const series of SERIES_LIST) {
-      const seriesData = cabData[series.id];
-      const cards      = seriesData?.cards || [];
-
-      // Resolve the series_id to use for price lookup. If series.id is a
-      // placeholder (90001-90003 for Cityscapes/Mural/Vintage), try to find
-      // the real series_id from seriesMeta by matching the series name.
-      let priceLookupId = series.id;
-      if (series.id.startsWith("9000")) {
-        const realId = meta.find(s=>s.name===series.name)?.series_id;
-        if (realId !== undefined) priceLookupId = String(realId);
-      }
-
-      const prices = listingsData[priceLookupId] || {};
-      result[series.id] = cards.map(card => ({
-        ...card,
-        seriesDisplayName: card.series,
-        sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
-        buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
-        seriesId: series.id,
-      }));
+      const cards = cabData[series.id]?.cards || [];
+      result[series.id] = cards.map(card => priced(card, series.id));
     }
     setAllCards(result);
 
@@ -1037,31 +1038,14 @@ function App() {
         // This series belongs to the Beltran collection — reclaim its cards.
         // Skip if allCards already has data for it (fresh blob wins).
         if ((result[beltranSeries.id] || []).length > 0) continue;
-
-        let priceLookupId = beltranSeries.id;
-        if (beltranSeries.id.startsWith("9000")) {
-          const realId = meta.find(s=>s.name===seriesName)?.series_id;
-          if (realId !== undefined) priceLookupId = String(realId);
-        }
-        const prices = listingsData[priceLookupId] || {};
-        result[beltranSeries.id] = cards.map(card => ({
-          ...card,
-          seriesDisplayName: card.series,
-          sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
-          buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
-          seriesId: beltranSeries.id,
-        }));
+        result[beltranSeries.id] = cards.map(card => priced(card, beltranSeries.id));
         continue;
       }
 
       const seriesId = meta.find(s=>s.name===seriesName)?.series_id;
-      const prices   = seriesId ? (listingsData[String(seriesId)] || {}) : {};
-      otherResult[seriesName] = cards.map(card => ({
-        ...card,
-        sellNowPrice: prices[card.uuid]?.sellNowPrice || 0,
-        buyNowPrice:  prices[card.uuid]?.buyNowPrice  || 0,
-        seriesId: seriesId ? String(seriesId) : null,
-      }));
+      otherResult[seriesName] = cards.map(card =>
+        priced(card, seriesId ? String(seriesId) : null)
+      );
     }
 
     setAllCards(result);   // re-set after any reclaims
