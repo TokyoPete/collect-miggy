@@ -108,6 +108,10 @@
     .pill-row { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px; }
     .pill { padding:5px 12px;border-radius:18px;border:1px solid var(--border);background:var(--surface2);color:var(--dim);font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap; }
     .pill.active { background:var(--accent);border-color:var(--accent);color:#000;font-weight:bold; }
+    /* Completed collections — green shading so finished sets read at a glance */
+    .pill.done { background:rgba(52,211,153,.10);border-color:#065f46;color:var(--green); }
+    .pill.done.active { background:var(--green);border-color:var(--green);color:#04231a;font-weight:bold; }
+    .pill .pill-check { font-size:9px;margin-left:4px;opacity:.9; }
 
     .search-input { padding:8px 12px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;-webkit-appearance:none;margin-bottom:10px; }
     .search-input:focus { outline:none;border-color:var(--accent-d); }
@@ -957,6 +961,11 @@ function App() {
   const [activeSeries,   setActiveSeries]   = useState(null);
   const [searchQuery,    setSearchQuery]    = useState("");
 
+  // Summary tab: sorting and completed-collection visibility
+  const [summarySort,    setSummarySort]    = useState("required"); // column key
+  const [summarySortDir, setSummarySortDir] = useState("desc");     // "asc" | "desc"
+  const [hideCompleted,  setHideCompleted]  = useState(false);
+
   const [showModal,   setShowModal]   = useState(false);
   const [diagLog,     setDiagLog]     = useState([]);
   const [diagResults, setDiagResults] = useState([]);
@@ -1344,6 +1353,54 @@ function App() {
     return{low:sorted.reduce((a,s)=>a+s.lowCost,0),high:sorted.reduce((a,s)=>a+s.highCost,0),count:inc.length};
   },[seriesStats,includedSeries]);
 
+  // ── Summary tab: filtered + sorted rows ──────────────────────────────────
+  const completedCount = useMemo(
+    () => seriesStats.filter(s => s.complete).length,
+    [seriesStats]
+  );
+
+  const visibleSeriesStats = useMemo(() => {
+    let rows = hideCompleted ? seriesStats.filter(s => !s.complete) : [...seriesStats];
+
+    const dir = summarySortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let av, bv;
+      switch (summarySort) {
+        case "included": av = includedSeries[a.id]?1:0; bv = includedSeries[b.id]?1:0; break;
+        case "name":     av = a.name;            bv = b.name;            break;
+        case "required": av = a.required;        bv = b.required;        break;
+        case "market":   av = a.totalCards;      bv = b.totalCards;      break;
+        case "have":     av = a.collectedCount;  bv = b.collectedCount;  break;
+        case "left":     av = a.needed;          bv = b.needed;          break;
+        case "low":      av = a.lowCost;         bv = b.lowCost;         break;
+        case "high":     av = a.highCost;        bv = b.highCost;        break;
+        case "pct":      av = a.required>0 ? a.collectedCount/a.required : 0;
+                         bv = b.required>0 ? b.collectedCount/b.required : 0; break;
+        default:         av = a.required;        bv = b.required;
+      }
+      if (typeof av === "string") return dir * av.localeCompare(bv);
+      return dir * (av - bv);
+    });
+    return rows;
+  }, [seriesStats, hideCompleted, summarySort, summarySortDir, includedSeries]);
+
+  const handleSummarySort = useCallback((key) => {
+    setSummarySort(prev => {
+      if (prev === key) {
+        setSummarySortDir(d => d === "asc" ? "desc" : "asc");
+        return prev;
+      }
+      // Text sorts default ascending; numeric sorts default descending
+      setSummarySortDir(key === "name" ? "asc" : "desc");
+      return key;
+    });
+  }, []);
+
+  const summarySortIcon = (key) => {
+    if (summarySort !== key) return <span style={{opacity:.25,fontSize:9,marginLeft:3}}>⇅</span>;
+    return <span style={{fontSize:9,marginLeft:3}}>{summarySortDir==="asc"?"↑":"↓"}</span>;
+  };
+
   const totalCollected=Object.values(collected).filter(Boolean).length;
 
   const statusInfo=(()=>{
@@ -1550,38 +1607,52 @@ function App() {
           {beltranTotal.count<REQUIRED_SERIES_COUNT&&<div className="alert alert-err">⚠️ Only {beltranTotal.count} checked — need at least {REQUIRED_SERIES_COUNT}.</div>}
           <div style={{fontSize:10,color:"var(--dim)",marginTop:8,lineHeight:1.7,padding:"0 2px"}}>
             <strong style={{color:"var(--dim)"}}>Mkt</strong> = cards currently listed on the Community Market for this series &nbsp;·&nbsp;
-            <strong style={{color:"var(--dim)"}}>⚠</strong> = market count differs from required count (some cards may be program-only or not yet listed) &nbsp;·&nbsp;
             Stub costs only include <strong style={{color:"var(--dim)"}}>market-priced cards</strong> — program reward cards are excluded from cost estimates
+          </div>
+
+          {/* Collapse completed collections */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",margin:"10px 0 8px"}}>
+            <label style={{display:"flex",alignItems:"center",gap:7,fontSize:12,cursor:completedCount>0?"pointer":"default",opacity:completedCount>0?1:.45}}>
+              <input
+                type="checkbox"
+                checked={hideCompleted}
+                disabled={completedCount===0}
+                onChange={()=>setHideCompleted(v=>!v)}
+                style={{accentColor:"#34d399"}}
+              />
+              <span>Hide completed collections</span>
+              <span style={{color:"var(--dim)",fontSize:11}}>
+                ({completedCount} of {seriesStats.length} complete)
+              </span>
+            </label>
+            <span style={{fontSize:10,color:"var(--dim)"}}>Tap any column header to sort</span>
           </div>
           <div className="table-wrap">
             <table>
               <thead><tr>
-                <th>✓</th>
-                <th className="left">Collection</th>
-                <th title="Cards required to complete this collection">Need</th>
-                <th title="Market cards currently listed for this series">Mkt</th>
-                <th title="Warning if listed card count differs from required count">⚠</th>
-                <th>Have</th>
-                <th>Left</th>
-                <th>Low (stubs)</th>
-                <th>High (stubs)</th>
-                <th>%</th>
+                <th className="sortable" onClick={()=>handleSummarySort("included")} title="Included in the 30 required collections">✓{summarySortIcon("included")}</th>
+                <th className="left sortable" onClick={()=>handleSummarySort("name")}>Collection{summarySortIcon("name")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("required")} title="Cards required to complete this collection">Need{summarySortIcon("required")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("market")} title="Market cards currently listed for this series">Mkt{summarySortIcon("market")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("have")} title="Cards you have collected">Have{summarySortIcon("have")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("left")} title="Cards still needed">Left{summarySortIcon("left")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("low")}>Low (stubs){summarySortIcon("low")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("high")}>High (stubs){summarySortIcon("high")}</th>
+                <th className="sortable" onClick={()=>handleSummarySort("pct")}>%{summarySortIcon("pct")}</th>
                 <th></th>
               </tr></thead>
               <tbody>
-                {seriesStats.map(s=>(
+                {visibleSeriesStats.length===0&&(
+                  <tr><td colSpan={10} style={{textAlign:"center",padding:28,color:"var(--green)"}}>
+                    🎉 All {seriesStats.length} collections complete
+                  </td></tr>
+                )}
+                {visibleSeriesStats.map(s=>(
                   <tr key={s.id} className={includedSeries[s.id]?"":"xrow"}>
                     <td className="center"><input type="checkbox" checked={!!includedSeries[s.id]} onChange={()=>setIncludedSeries(p=>({...p,[s.id]:!p[s.id]}))} style={{accentColor:"#e8b84b"}}/></td>
                     <td className="left" style={{fontWeight:"bold",color:s.complete?"var(--green)":"var(--text)"}}>{s.name}</td>
                     <td className="center" style={{color:"var(--dim)"}}>{s.required}</td>
                     <td className="center" style={{color:"var(--dim)"}}>{s.totalCards>0?s.totalCards:"—"}</td>
-                    <td className="center">
-                      {s.totalCards>0 && s.countMismatch
-                        ? <span title={`${s.totalCards} cards in market vs ${s.required} required — some cards may not be listed yet`} style={{color:"var(--accent)",cursor:"help"}}>⚠</span>
-                        : s.totalCards>0
-                          ? <span style={{color:"var(--green)"}}>✓</span>
-                          : <span style={{color:"var(--dim)"}}>—</span>}
-                    </td>
                     <td className="center" style={{color:"var(--green)"}}>{s.collectedCount}</td>
                     <td className="center" style={{color:s.needed===0?"var(--green)":"var(--accent)"}}>{s.needed}</td>
                     <td className="right" style={{color:"var(--blue)"}}>{s.lowCost>0?s.lowCost.toLocaleString():"—"}</td>
@@ -1596,7 +1667,6 @@ function App() {
                   <td colSpan={2} className="left" style={{color:"var(--accent)"}}>🏆 CARLOS BELTRAN ({REQUIRED_SERIES_COUNT}/{TOTAL_SERIES_COUNT})</td>
                   <td className="center">{REQUIRED_SERIES_COUNT}</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
-                  <td></td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td className="center" style={{color:"var(--dim)"}}>—</td>
                   <td className="right" style={{color:"var(--green)"}}>{beltranTotal.low.toLocaleString()}</td>
@@ -1606,6 +1676,15 @@ function App() {
               </tfoot>
             </table>
           </div>
+          {hideCompleted&&completedCount>0&&(
+            <div style={{fontSize:11,color:"var(--dim)",marginTop:8,textAlign:"center"}}>
+              {completedCount} completed collection{completedCount===1?"":"s"} hidden ·{" "}
+              <button onClick={()=>setHideCompleted(false)}
+                style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:11,fontFamily:"inherit",textDecoration:"underline",padding:0}}>
+                show all
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1654,8 +1733,9 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
   const [refreshingSeries, setRefreshingSeries] = useState(false);
 
   // All hooks must be declared before any conditional logic
-  const [sortField, setSortField] = useState("ovr");
-  const [sortDir,   setSortDir]   = useState("desc"); // "asc"|"desc"
+  const [sortField,     setSortField]     = useState("ovr");
+  const [sortDir,       setSortDir]       = useState("desc"); // "asc"|"desc"
+  const [hideCollected, setHideCollected] = useState(false);
 
   // Derived values (non-hook, after all hooks)
   const isOtherSeries   = activeSeries?.startsWith("other:");
@@ -1676,10 +1756,19 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
     return <span style={{fontSize:9,marginLeft:3}}>{sortDir==="asc"?"↑":"↓"}</span>;
   };
 
+  // How many cards in this collection are already checked off
+  const collectedInSeries = useMemo(
+    () => (activeData?.cards||[]).filter(c=>collected[c.uuid]).length,
+    [activeData, collected]
+  );
+
   const filteredCards = useMemo(()=>{
     if(!activeData) return[];
     const q=searchQuery.toLowerCase();
     let cards=(activeData.cards||[]).filter(c=>!q||c.name.toLowerCase().includes(q)||c.position.toLowerCase().includes(q)||(c.team||"").toLowerCase().includes(q));
+
+    // Optionally hide cards already collected
+    if (hideCollected) cards = cards.filter(c=>!collected[c.uuid]);
 
     // Apply sort
     cards = [...cards].sort((a,b)=>{
@@ -1698,7 +1787,7 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
       return sortDir==="asc" ? av-bv : bv-av;
     });
     return cards;
-  },[activeData,searchQuery,sortField,sortDir]);
+  },[activeData,searchQuery,sortField,sortDir,hideCollected,collected]);
 
   const showMsg = (text,type="ok") => {
     setActionMsg({text,type});
@@ -1817,12 +1906,21 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
         Carlos Beltran Collections
       </div>
       <div className="pill-row">
-        {SERIES_LIST.map(s=>(
-          <button key={s.id} className={`pill ${activeSeries===s.id?"active":""}`}
-            onClick={()=>{setActiveSeries(s.id);setSearchQuery("");setConfirmDelete(null);setConfirmListings(null);}}>
-            {s.name}
-          </button>
-        ))}
+        {SERIES_LIST.map(s=>{
+          const stat = seriesStats.find(x=>x.id===s.id);
+          const done = !!stat?.complete;
+          return (
+            <button key={s.id}
+              className={`pill ${done?"done":""} ${activeSeries===s.id?"active":""}`}
+              title={done
+                ? `${s.name} — complete (${stat.collectedCount}/${s.required})`
+                : `${s.name} — ${stat?stat.collectedCount:0}/${s.required} collected`}
+              onClick={()=>{setActiveSeries(s.id);setSearchQuery("");setConfirmDelete(null);setConfirmListings(null);}}>
+              {s.name}
+              {done && <span className="pill-check">✓</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* Other series pills */}
@@ -1848,7 +1946,9 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
         <div>
           {/* Collection header + action bar */}
           <div style={{marginBottom:8}}>
-            <div style={{fontSize:15,fontWeight:"bold"}}>{activeData.name}</div>
+            <div style={{fontSize:15,fontWeight:"bold",color:activeData.complete?"var(--green)":"var(--text)"}}>
+              {activeData.name}{activeData.complete&&<span style={{fontSize:11,marginLeft:6}}>✓ complete</span>}
+            </div>
             <div style={{fontSize:11,color:"var(--dim)",marginTop:2}}>
               {activeData.collectedCount}/{activeData.required} required · {activeData.needed} still needed · {activeData.totalCards} in database
             </div>
@@ -1877,6 +1977,24 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
 
           <input className="search-input" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search name, position, team…"/>
 
+          {/* Hide collected cards */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",margin:"2px 0 10px"}}>
+            <label style={{display:"flex",alignItems:"center",gap:7,fontSize:12,cursor:collectedInSeries>0?"pointer":"default",opacity:collectedInSeries>0?1:.45}}>
+              <input
+                type="checkbox"
+                checked={hideCollected}
+                disabled={collectedInSeries===0}
+                onChange={()=>setHideCollected(v=>!v)}
+                style={{accentColor:"#34d399"}}
+              />
+              <span>Hide collected cards</span>
+              <span style={{color:"var(--dim)",fontSize:11}}>
+                ({collectedInSeries} of {(activeData.cards||[]).length} collected)
+              </span>
+            </label>
+            <span style={{fontSize:10,color:"var(--dim)"}}>Tap any column header to sort</span>
+          </div>
+
           <div className="table-wrap">
             <table>
               <thead>
@@ -1894,7 +2012,13 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
                 </tr>
               </thead>
               <tbody>
-                {filteredCards.length===0&&<tr><td colSpan={10} style={{textAlign:"center",padding:28,color:"var(--dim)"}}>No cards found</td></tr>}
+                {filteredCards.length===0&&(
+                  <tr><td colSpan={10} style={{textAlign:"center",padding:28,color:hideCollected&&!searchQuery?"var(--green)":"var(--dim)"}}>
+                    {hideCollected&&!searchQuery
+                      ? `🎉 All ${(activeData.cards||[]).length} cards in this collection are collected`
+                      : "No cards found"}
+                  </td></tr>
+                )}
                 {filteredCards.map(card=>(
                   <tr key={card.uuid} className={collected[card.uuid]?"crow":""}>
                     <td className="center">
@@ -1942,6 +2066,16 @@ function CardsTab({ allCards, otherCards={}, collected, saveCollected, activeSer
               </tbody>
             </table>
           </div>
+
+          {hideCollected&&collectedInSeries>0&&(
+            <div style={{fontSize:11,color:"var(--dim)",marginTop:8,textAlign:"center"}}>
+              {collectedInSeries} collected card{collectedInSeries===1?"":"s"} hidden ·{" "}
+              <button onClick={()=>setHideCollected(false)}
+                style={{background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:11,fontFamily:"inherit",textDecoration:"underline",padding:0}}>
+                show all
+              </button>
+            </div>
+          )}
 
           {!isOtherSeries && (
             <div className="cost-chips">
