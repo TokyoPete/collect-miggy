@@ -20,7 +20,7 @@ export const BELTRAN_SERIES = {
   "2026 All-Star":          "90010", // placeholder — new series
   "Jolt":                   "10046",
   "Awards":                 "10005",
-  "Jackie Robinson Day":    "90015", // placeholder — new series
+  "Prime":                  "10013",
   "All-Star":               "10004",
   "2026 Draft":             "90011", // placeholder — new series
   "Mural":                  "90002", // placeholder — new series
@@ -66,7 +66,7 @@ export const REQUIRED_COUNTS = {
   "10017": 87,  // Topps Now
   "90010": 60,  // 2026 All-Star
   "10046": 55,  // Jolt
-  "90015": 42,  // Jackie Robinson Day
+  "10013": 3,   // Prime
   "10004": 47,  // All-Star
   "10005": 40,  // Awards
   "90011": 29,  // 2026 Draft
