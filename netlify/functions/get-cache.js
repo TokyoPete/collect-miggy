@@ -39,7 +39,14 @@ export default async function handler(req, context) {
     listings: listingsPayload ? {
       updatedAt:     listingsPayload.updatedAt,
       totalListings: listingsPayload.totalListings,
-      data:          listingsPayload.data,
+      pagesLoaded:   listingsPayload.pagesLoaded,
+      totalPages:    listingsPayload.totalPages,
+      complete:      listingsPayload.complete,
+      // Flat uuid -> { sellNowPrice, buyNowPrice } map.
+      // `data` is the legacy series-keyed shape, passed through so the
+      // frontend can flatten it until the next listings refresh runs.
+      prices:        listingsPayload.prices || null,
+      data:          listingsPayload.data   || null,
     } : null,
 
     // Manifest — integrity check
@@ -52,7 +59,9 @@ export default async function handler(req, context) {
     itemsPhase:         itemsStatus?.phase         || null,
     itemsError:         itemsStatus?.status    === "error" ? itemsStatus.error : null,
     cancelPending:      !!cancelFlag?.cancelled,
-    listingsRefreshing: listingsStatus?.status === "refreshing",
+    listingsRefreshing:  listingsStatus?.status === "refreshing",
+    listingsPctComplete: listingsStatus?.pctComplete ?? null,
+    listingsPhase:       listingsStatus?.phase || null,
     listingsError:      listingsStatus?.status === "error" ? listingsStatus.error : null,
     hasCheckpoint:      !!checkpoint,
     checkpointPage:     checkpoint?.lastCompletedPage || null,
