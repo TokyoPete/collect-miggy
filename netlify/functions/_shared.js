@@ -3,93 +3,100 @@
 
 export const BASE = "https://mlb26.theshow.com";
 
-// The 26 series that make up the Victor Martinez Legends & Flashbacks collection.
-// Keys are the EXACT series names returned by the Items API (and meta API).
-// Values are the series_id used by the Listings API.
+// ── Carlos Beltran Hall of Fame collection ────────────────────────────────────
+// 32 series available, 30 of 32 required (2 skips).
+// Keys: EXACT series names from the Items API / metadata API.
+// Values: series_id used by the Listings API.
 //
-// NOTE: Cityscapes, Mural, and Vintage are new series introduced alongside this
-// collection. Their series_ids were not yet available in the metadata API at
-// the time this was written, so placeholder IDs (90001-90003) are used.
-// fetchSeriesMeta() runs on every items refresh and the items refresh buckets
-// cards by NAME (not ID) — so card data for these series will populate correctly
-// even with placeholder IDs. The placeholder IDs only affect the LISTINGS
-// (price) refresh for these 3 series until corrected. Once the real series_ids
-// appear in the metadata API, update VMART_SERIES below with the correct values.
-export const VMART_SERIES = {
+// Placeholder IDs (90001–90016) are used for series whose real IDs were not
+// yet published in the metadata API. The items refresh buckets cards by NAME
+// so card data populates correctly even with placeholder IDs. Only the listings
+// price refresh is affected until real IDs appear in the metadata API — at that
+// point update the placeholder values below.
+export const BELTRAN_SERIES = {
   "World Baseball Classic": "10028",
   "Spotlight":              "10047",
   "Topps Now":              "10017",
-  "All-Star":               "10004",
-  "Awards":                 "10005",
-  "The Negro Leagues":      "10035",
-  "Cityscapes":             "90001", // placeholder — update once known
+  "2026 All-Star":          "90010", // placeholder — new series
   "Jolt":                   "10046",
-  "Mural":                  "90002", // placeholder — update once known
-  "Vintage":                "90003", // placeholder — update once known
-  "New Threads":            "10050",
-  "Contributor":            "10044",
-  "Breakout":               "10002",
-  "2nd Half Heroes":        "10020",
-  "Egg Hunt":               "10043",
+  "Awards":                 "10005",
+  "Jackie Robinson Day":    "90015", // placeholder — new series
+  "All-Star":               "10004",
+  "2026 Draft":             "90011", // placeholder — new series
+  "Mural":                  "90002", // placeholder — new series
+  "Summer":                 "90016", // placeholder — new series
+  "Cityscapes":             "90001", // placeholder — new series
+  "Vintage":                "90003", // placeholder — new series
   "Spring Breakout":        "10039",
+  "New Threads":            "10050",
+  "2nd Half Heroes":        "10020",
+  "The Negro Leagues":      "10035",
+  "Egg Hunt":               "10043",
+  "Contributor":            "10044",
   "Postseason":             "10006",
+  "Breakout":               "10002",
   "Veteran":                "10003",
   "Milestone":              "10022",
   "Standout":               "10034",
   "St. Patrick's Day":      "10062",
   "Rookie":                 "10001",
+  "2026 Home Run Derby":    "90012", // placeholder — new series
   "Cornerstone":            "10049",
-  "Last Ride":              "10045",
-  "Prime":                  "10013",
+  "Finest":                 "90014", // placeholder — new series
   "Signature":              "10009",
+  "Hall of Fame":           "90013", // placeholder — new series
+  "Last Ride":              "10045",
 };
 
-// Backwards-compatible aliases (previous Cabrera-era names referenced this export)
-export const CABRERA_SERIES   = VMART_SERIES;
-export const SERIES_NAME_TO_ID = VMART_SERIES;
+// Backwards-compatible aliases used by other function files
+export const CABRERA_SERIES    = BELTRAN_SERIES;
+export const VMART_SERIES      = BELTRAN_SERIES;
+export const SERIES_NAME_TO_ID = BELTRAN_SERIES;
 
-// Display name overrides — none needed currently for V-Mart series,
-// kept for forward compatibility with the frontend's display-name lookup.
-export const SERIES_DISPLAY_NAME = {};
+export const SERIES_DISPLAY_NAME = {}; // no display name overrides needed
 
 export const SERIES_ID_TO_NAME = Object.fromEntries(
-  Object.entries(VMART_SERIES).map(([name, id]) => [id, SERIES_DISPLAY_NAME[name] || name])
+  Object.entries(BELTRAN_SERIES).map(([name, id]) => [id, name])
 );
 
-// Cards required per series to earn that series' voucher/reward,
-// per the Victor Martinez Legends & Flashbacks collection (24 of 26 required).
+// Cards required per series to earn that series' voucher toward Carlos Beltran.
 export const REQUIRED_COUNTS = {
   "10028": 142, // World Baseball Classic
-  "10047": 70,  // Spotlight
-  "10017": 63,  // Topps Now
-  "10004": 45,  // All-Star
-  "10005": 32,  // Awards
-  "10035": 31,  // The Negro Leagues
-  "90001": 30,  // Cityscapes
-  "10046": 40,  // Jolt
+  "10047": 102, // Spotlight
+  "10017": 87,  // Topps Now
+  "90010": 60,  // 2026 All-Star
+  "10046": 55,  // Jolt
+  "90015": 42,  // Jackie Robinson Day
+  "10004": 47,  // All-Star
+  "10005": 40,  // Awards
+  "90011": 29,  // 2026 Draft
   "90002": 29,  // Mural
+  "90016": 29,  // Summer
+  "90001": 30,  // Cityscapes
   "90003": 27,  // Vintage
-  "10050": 23,  // New Threads
-  "10044": 19,  // Contributor
-  "10002": 18,  // Breakout
-  "10020": 18,  // 2nd Half Heroes
-  "10043": 17,  // Egg Hunt
   "10039": 16,  // Spring Breakout
-  "10006": 12,  // Postseason
+  "10050": 23,  // New Threads
+  "10020": 19,  // 2nd Half Heroes
+  "10035": 32,  // The Negro Leagues
+  "10043": 18,  // Egg Hunt
+  "10044": 19,  // Contributor
+  "10006": 13,  // Postseason
+  "10002": 19,  // Breakout
   "10003": 12,  // Veteran
-  "10022": 9,   // Milestone
-  "10034": 8,   // Standout
+  "10022": 17,  // Milestone
+  "10034": 9,   // Standout
   "10062": 8,   // St. Patrick's Day
-  "10001": 7,   // Rookie
-  "10049": 4,   // Cornerstone
+  "10001": 8,   // Rookie
+  "90012": 7,   // 2026 Home Run Derby
+  "10049": 5,   // Cornerstone
+  "90014": 2,   // Finest
+  "10009": 2,   // Signature
+  "90013": 1,   // Hall of Fame
   "10045": 2,   // Last Ride
-  "10013": 2,   // Prime
-  "10009": 1,   // Signature
 };
 
-// Total series in the collection and how many must be completed (24 of 26)
-export const TOTAL_SERIES_COUNT    = 26;
-export const REQUIRED_SERIES_COUNT = 24;
+export const TOTAL_SERIES_COUNT    = 32;
+export const REQUIRED_SERIES_COUNT = 30;
 
 // Locations to completely ignore — redundant with Community Market
 export const IGNORED_LOCATIONS = new Set([
@@ -119,15 +126,9 @@ export function jsonResponse(body, status = 200, extraHeaders = {}) {
 }
 
 // Convert a raw item from the Items API page response into our stored card shape.
-// The Items API already includes series and locations — no individual Item API call needed.
 export function itemToCard(item) {
-  // Filter out ignored locations
   const locations = (Array.isArray(item.locations) ? item.locations : [])
     .filter(l => !IGNORED_LOCATIONS.has(l.toUpperCase().trim()));
-
-  // Use the API's is_sellable field directly
-  const isSellable = item.is_sellable === true;
-
   return {
     uuid:       item.uuid,
     name:       item.name,
@@ -137,20 +138,18 @@ export function itemToCard(item) {
     ovr:        item.ovr || 0,
     series:     item.series || "",
     locations,
-    isSellable,
+    isSellable: item.is_sellable === true,
   };
 }
 
-// Fetch the meta data API to get the current full list of series with IDs.
-// Used once per items refresh to future-proof against new series being added,
-// and to discover/resolve real series_ids for placeholder entries (Cityscapes,
-// Mural, Vintage) once MLB The Show publishes them.
+// Fetch the metadata API to get the current full list of series with IDs.
+// Used once per items refresh — future-proofs against new series and resolves
+// real IDs for placeholder entries once the game publishes them.
 export async function fetchSeriesMeta() {
   const res = await fetch(`${BASE}/apis/metadata.json`, {
     headers: { "User-Agent": "collect-miggy-netlify/1.0" },
   });
   if (!res.ok) throw new Error(`Meta API HTTP ${res.status}`);
   const data = await res.json();
-  // Returns { series: [{series_id, name}, ...], ... }
   return data.series || [];
 }
